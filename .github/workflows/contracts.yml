@@ -1,0 +1,42 @@
+name: contracts
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FOUNDRY_PROFILE: ci
+
+jobs:
+  forge:
+    name: forge build + test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          # Keep in step with FOUNDRY_VERSION in scripts/cloud-setup.sh.
+          version: v1.8.7
+
+      - name: Show versions
+        run: forge --version
+
+      - name: Build (with contract sizes)
+        run: forge build --sizes
+
+      - name: Test
+        run: forge test -vvv
