@@ -24,7 +24,7 @@ contracts/          Foundry project
   lib/              forge-std, openzeppelin-contracts (git submodules, pinned tags)
 services/           indexer/, transfer-api/ (Python)
 tests/              integration/, reconciliation/, ui/, load/
-docs/               plan.md, test strategy, RTM, security plan, reports
+docs/               plan.md, decisions.md, test strategy, RTM, security plan, reports
 scripts/            cloud-setup.sh
 .github/workflows/  contracts.yml (more workflows land with later PRs)
 ```
@@ -46,12 +46,26 @@ safe to re-run.
 CI does not use the script. It uses `foundry-rs/foundry-toolchain`. If you
 bump the Foundry version, change it in both places.
 
+**Use the pinned Foundry version (v1.8.7) locally too.** `.gas-snapshot` is only
+reproducible with the forge version that wrote it. With forge v1.7.1 or older,
+`forge snapshot --check` fails on 91 of 92 entries, even though every test
+passes. Outside the cloud session, install the pinned version with:
+
+```bash
+foundryup --install v1.8.7
+```
+
+Bumping Foundry therefore means three places: `scripts/cloud-setup.sh`,
+`.github/workflows/contracts.yml`, and a regenerated `contracts/.gas-snapshot`
+in the same commit.
+
 Day-to-day:
 
 ```bash
 cd contracts
 forge build --sizes
 forge test -vvv
+forge snapshot --check   # CI fails if gas moved; run `forge snapshot` and commit if intended
 ```
 
 ## Working rules
@@ -84,3 +98,5 @@ forge test -vvv
   (`vm.expectEmit`), and counterparties' balances.
 - Every PR description says what the tests *found* and explains one test as a
   teaching example.
+- A behaviour choice the spec leaves open (a boundary, who may call what, what
+  input is rejected) gets a test **and** an entry in `docs/decisions.md`.
