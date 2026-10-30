@@ -25,23 +25,27 @@ contract SettlementTokenRolesTest is SettlementTokenBase {
 
     // ---- the matrix --------------------------------------------------------
 
-    /// @notice TOK-02/03/04: every privileged function x every role, plus a role-less
-    ///         allowlisted holder and an arbitrary address.
+    /// @notice TOK-02/03/04: every privileged function x every role (admin, minter,
+    ///         pauser, compliance), plus a role-less allowlisted holder and an
+    ///         arbitrary address.
     /// @dev Each cell runs from the same snapshot. A caller holding the required role
     ///      must succeed and produce the function's effect. Every other caller must
     ///      revert with AccessControlUnauthorizedAccount(caller, requiredRole) and
     ///      leave all token state untouched.
     ///
-    ///                    admin   minter  pauser  alice   mallory
-    ///      mint            -       OK      -       -       -
-    ///      burn            -       OK      -       -       -
-    ///      pause           -       -       OK      -       -
-    ///      unpause         -       -       OK      -       -
-    ///      setAllowlisted  OK      -       -       -       -
-    ///      grantRole       OK      -       -       -       -
-    ///      revokeRole      OK      -       -       -       -
+    ///                    admin   minter  pauser  compliance  alice   mallory
+    ///      mint            -       OK      -       -           -       -
+    ///      burn            -       OK      -       -           -       -
+    ///      pause           -       -       OK      -           -       -
+    ///      unpause         -       -       OK      -           -       -
+    ///      setAllowlisted  -       -       -       OK          -       -
+    ///      grantRole       OK      -       -       -           -       -
+    ///      revokeRole      OK      -       -       -           -       -
+    ///
+    ///      The admin cannot touch the allowlist and compliance cannot grant roles:
+    ///      governance and compliance are segregated duties.
     function test_RoleMatrix_OnlyRequiredRoleCanCallEachPrivilegedFunction() public {
-        address[5] memory callers = [admin, minter, pauser, alice, mallory];
+        address[6] memory callers = [admin, minter, pauser, compliance, alice, mallory];
         uint256 allowedCells;
 
         for (uint256 f; f < FN_COUNT; ++f) {
@@ -85,6 +89,7 @@ contract SettlementTokenRolesTest is SettlementTokenBase {
     function _requiredRole(Fn fn) internal view returns (bytes32) {
         if (fn == Fn.Mint || fn == Fn.Burn) return MINTER_ROLE;
         if (fn == Fn.Pause || fn == Fn.Unpause) return PAUSER_ROLE;
+        if (fn == Fn.SetAllowlisted) return ALLOWLIST_ROLE;
         return DEFAULT_ADMIN_ROLE;
     }
 
@@ -93,9 +98,9 @@ contract SettlementTokenRolesTest is SettlementTokenBase {
     function _arrange(Fn fn) internal {
         if (fn == Fn.Burn) {
             // Every caller gets a balance, so "nothing to burn" can't mask a missing check.
-            address[4] memory holders = [admin, pauser, mallory, minter];
+            address[5] memory holders = [admin, pauser, compliance, mallory, minter];
             for (uint256 i; i < holders.length; ++i) {
-                vm.prank(admin);
+                vm.prank(compliance);
                 token.setAllowlisted(holders[i], true);
                 vm.prank(minter);
                 token.mint(holders[i], AMOUNT);
@@ -206,7 +211,9 @@ contract SettlementTokenRolesTest is SettlementTokenBase {
         assertTrue(token.paused(), "token must stay paused");
     }
 
-    /// @notice TOK-06: an admin that renounces cannot manage roles or the allowlist.
+    /// @notice TOK-06: an admin that renounces can no longer grant or revoke roles.
+    /// @dev This leaves the token with no admin at all; see the follow-up issue on
+    ///      AccessControlDefaultAdminRules. Existing role holders keep working.
     function test_RevertWhen_AdminActsAfterRenouncing() public {
         vm.prank(admin);
         token.renounceRole(DEFAULT_ADMIN_ROLE, admin);
@@ -216,11 +223,48 @@ contract SettlementTokenRolesTest is SettlementTokenBase {
         vm.expectRevert(_unauthorized(admin, DEFAULT_ADMIN_ROLE));
         token.grantRole(MINTER_ROLE, bob);
         vm.expectRevert(_unauthorized(admin, DEFAULT_ADMIN_ROLE));
-        token.setAllowlisted(mallory, true);
+        token.revokeRole(MINTER_ROLE, minter);
         vm.stopPrank();
 
         assertFalse(token.hasRole(MINTER_ROLE, bob));
+        assertTrue(token.hasRole(MINTER_ROLE, minter));
+
+        // Compliance is a separate duty and is unaffected by the loss of governance.
+        vm.prank(compliance);
+        token.setAllowlisted(mallory, true);
+        assertTrue(token.isAllowlisted(mallory));
+    }
+
+    /// @notice TOK-06: a revoked compliance officer's next allowlist change fails.
+    function test_RevertWhen_ComplianceSetsAllowlistAfterRevocation() public {
+        vm.prank(admin);
+        token.revokeRole(ALLOWLIST_ROLE, compliance);
+
+        vm.prank(compliance);
+        vm.expectRevert(_unauthorized(compliance, ALLOWLIST_ROLE));
+        token.setAllowlisted(mallory, true);
+
         assertFalse(token.isAllowlisted(mallory));
+        assertFalse(token.hasRole(ALLOWLIST_ROLE, compliance));
+    }
+
+    /// @notice TOK-04: the admin cannot change the allowlist on its own authority.
+    /// @dev Segregation of duties is enforced on-chain, but governance can still
+    ///      appoint itself. The RoleGranted event makes that self-grant auditable,
+    ///      and it is a deliberate, two-step act rather than a side power of admin.
+    function test_RevertWhen_AdminSetsAllowlistWithoutAllowlistRole() public {
+        vm.prank(admin);
+        vm.expectRevert(_unauthorized(admin, ALLOWLIST_ROLE));
+        token.setAllowlisted(mallory, true);
+        assertFalse(token.isAllowlisted(mallory));
+
+        vm.expectEmit(true, true, true, true, address(token));
+        emit IAccessControl.RoleGranted(ALLOWLIST_ROLE, admin, admin);
+        vm.startPrank(admin);
+        token.grantRole(ALLOWLIST_ROLE, admin);
+        token.setAllowlisted(mallory, true);
+        vm.stopPrank();
+        assertTrue(token.isAllowlisted(mallory));
     }
 
     /// @notice TOK-06: a new grant is usable in the same block, and emits RoleGranted.

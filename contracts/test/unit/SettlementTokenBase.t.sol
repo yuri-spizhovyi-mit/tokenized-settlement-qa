@@ -10,7 +10,8 @@ import {SettlementToken} from "../../src/SettlementToken.sol";
 ///      TOK-01  Deployment: admin holds DEFAULT_ADMIN_ROLE only; no supply; not paused.
 ///      TOK-02  Only MINTER_ROLE can mint and burn.
 ///      TOK-03  Only PAUSER_ROLE can pause and unpause.
-///      TOK-04  Only DEFAULT_ADMIN_ROLE can change the allowlist and grant/revoke roles.
+///      TOK-04  Only ALLOWLIST_ROLE can change the allowlist; only DEFAULT_ADMIN_ROLE can
+///              grant/revoke roles. Governance and compliance are separate duties.
 ///      TOK-05  Every balance movement requires the sender, the recipient and (for
 ///              transferFrom) the spender to be allowlisted. transferFrom is no bypass.
 ///      TOK-06  Revoking a role or delisting an account takes effect immediately.
@@ -21,12 +22,14 @@ abstract contract SettlementTokenBase is Test {
     address internal admin = makeAddr("admin");
     address internal minter = makeAddr("minter");
     address internal pauser = makeAddr("pauser");
+    address internal compliance = makeAddr("compliance"); // ALLOWLIST_ROLE
     address internal alice = makeAddr("alice"); // allowlisted holder
     address internal bob = makeAddr("bob"); // allowlisted holder
     address internal mallory = makeAddr("mallory"); // never allowlisted, holds no role
 
     bytes32 internal MINTER_ROLE;
     bytes32 internal PAUSER_ROLE;
+    bytes32 internal ALLOWLIST_ROLE;
     bytes32 internal constant DEFAULT_ADMIN_ROLE = 0x00;
 
     uint256 internal constant ALICE_START = 1_000e6;
@@ -35,10 +38,15 @@ abstract contract SettlementTokenBase is Test {
         token = new SettlementToken(admin);
         MINTER_ROLE = token.MINTER_ROLE();
         PAUSER_ROLE = token.PAUSER_ROLE();
+        ALLOWLIST_ROLE = token.ALLOWLIST_ROLE();
 
         vm.startPrank(admin);
         token.grantRole(MINTER_ROLE, minter);
         token.grantRole(PAUSER_ROLE, pauser);
+        token.grantRole(ALLOWLIST_ROLE, compliance);
+        vm.stopPrank();
+
+        vm.startPrank(compliance);
         token.setAllowlisted(alice, true);
         token.setAllowlisted(bob, true);
         token.setAllowlisted(minter, true);

@@ -90,7 +90,7 @@ contract SettlementTokenPauseTest is SettlementTokenBase {
 
     /// @notice TOK-07: compliance can still list and delist accounts mid-incident.
     function test_SetAllowlisted_WorksWhilePaused() public {
-        vm.startPrank(admin);
+        vm.startPrank(compliance);
         token.setAllowlisted(mallory, true);
         token.setAllowlisted(alice, false);
         vm.stopPrank();

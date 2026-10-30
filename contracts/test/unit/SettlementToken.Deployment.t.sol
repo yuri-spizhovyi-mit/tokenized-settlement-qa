@@ -32,6 +32,7 @@ contract SettlementTokenDeploymentTest is SettlementTokenBase {
         assertTrue(fresh.hasRole(DEFAULT_ADMIN_ROLE, admin));
         assertFalse(fresh.hasRole(MINTER_ROLE, admin));
         assertFalse(fresh.hasRole(PAUSER_ROLE, admin));
+        assertFalse(fresh.hasRole(ALLOWLIST_ROLE, admin), "admin must not hold compliance duty");
         assertFalse(fresh.isAllowlisted(admin));
         assertFalse(fresh.hasRole(DEFAULT_ADMIN_ROLE, address(this)), "deployer kept admin");
     }
@@ -40,6 +41,7 @@ contract SettlementTokenDeploymentTest is SettlementTokenBase {
     function test_Deploy_RoleAdminsAreDefaultAdmin() public view {
         assertEq(fresh.getRoleAdmin(MINTER_ROLE), DEFAULT_ADMIN_ROLE);
         assertEq(fresh.getRoleAdmin(PAUSER_ROLE), DEFAULT_ADMIN_ROLE);
+        assertEq(fresh.getRoleAdmin(ALLOWLIST_ROLE), DEFAULT_ADMIN_ROLE);
         assertEq(fresh.getRoleAdmin(DEFAULT_ADMIN_ROLE), DEFAULT_ADMIN_ROLE);
     }
 
@@ -47,6 +49,7 @@ contract SettlementTokenDeploymentTest is SettlementTokenBase {
     function test_Deploy_RoleIdsAreKeccakOfNames() public view {
         assertEq(fresh.MINTER_ROLE(), keccak256("MINTER_ROLE"));
         assertEq(fresh.PAUSER_ROLE(), keccak256("PAUSER_ROLE"));
+        assertEq(fresh.ALLOWLIST_ROLE(), keccak256("ALLOWLIST_ROLE"));
     }
 
     /// @notice TOK-01: a zero admin would leave the token with no one able to grant roles.

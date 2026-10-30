@@ -43,7 +43,7 @@ contract SettlementTokenAllowlistTest is SettlementTokenBase {
 
     /// @notice TOK-06: delisting freezes the holder's balance in the same block.
     function test_RevertWhen_SenderDelistedBeforeTransfer() public {
-        vm.prank(admin);
+        vm.prank(compliance);
         token.setAllowlisted(alice, false);
         State memory before = _state();
 
@@ -57,7 +57,7 @@ contract SettlementTokenAllowlistTest is SettlementTokenBase {
 
     /// @notice TOK-06: re-listing restores the holder's ability to transfer.
     function test_Transfer_SucceedsAfterSenderRelisted() public {
-        vm.startPrank(admin);
+        vm.startPrank(compliance);
         token.setAllowlisted(alice, false);
         token.setAllowlisted(alice, true);
         vm.stopPrank();
@@ -106,7 +106,7 @@ contract SettlementTokenAllowlistTest is SettlementTokenBase {
     function test_RevertWhen_TransferFromOwnerDelistedAfterApproving() public {
         vm.prank(alice);
         token.approve(bob, AMOUNT);
-        vm.prank(admin);
+        vm.prank(compliance);
         token.setAllowlisted(alice, false);
         State memory before = _state();
 
@@ -137,7 +137,7 @@ contract SettlementTokenAllowlistTest is SettlementTokenBase {
     function test_RevertWhen_TransferFromSpenderDelistedAfterApproval() public {
         vm.prank(alice);
         token.approve(bob, AMOUNT);
-        vm.prank(admin);
+        vm.prank(compliance);
         token.setAllowlisted(bob, false);
 
         vm.prank(bob);
@@ -198,7 +198,7 @@ contract SettlementTokenAllowlistTest is SettlementTokenBase {
     function test_RevertWhen_BurnerNotAllowlisted() public {
         vm.prank(alice);
         token.transfer(minter, AMOUNT);
-        vm.prank(admin);
+        vm.prank(compliance);
         token.setAllowlisted(minter, false);
         State memory before = _state();
 
@@ -215,20 +215,20 @@ contract SettlementTokenAllowlistTest is SettlementTokenBase {
     function test_SetAllowlisted_UpdatesFlagAndEmitsEvent() public {
         vm.expectEmit(true, false, false, true, address(token));
         emit SettlementToken.AllowlistUpdated(mallory, true);
-        vm.prank(admin);
+        vm.prank(compliance);
         token.setAllowlisted(mallory, true);
         assertTrue(token.isAllowlisted(mallory));
 
         vm.expectEmit(true, false, false, true, address(token));
         emit SettlementToken.AllowlistUpdated(mallory, false);
-        vm.prank(admin);
+        vm.prank(compliance);
         token.setAllowlisted(mallory, false);
         assertFalse(token.isAllowlisted(mallory));
     }
 
     /// @notice TOK-04: the zero address is the mint/burn sentinel and cannot be listed.
     function test_RevertWhen_AllowlistingZeroAddress() public {
-        vm.prank(admin);
+        vm.prank(compliance);
         vm.expectRevert(abi.encodeWithSelector(SettlementToken.InvalidAccount.selector, address(0)));
         token.setAllowlisted(address(0), true);
     }

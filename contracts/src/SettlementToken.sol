@@ -10,10 +10,15 @@ import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 ///         hold, send or spend it; an issuer mints and redeems; a pauser can stop all
 ///         balance movements in an incident.
 /// @dev Roles:
-///      - DEFAULT_ADMIN_ROLE: grants/revokes every role and manages the allowlist.
+///      - DEFAULT_ADMIN_ROLE: governance. Grants and revokes every role; holds no
+///        operational power itself.
 ///      - MINTER_ROLE: mints to allowlisted accounts and burns its own balance
 ///        (redemption: a holder transfers to the issuer, the issuer burns).
 ///      - PAUSER_ROLE: pauses and unpauses.
+///      - ALLOWLIST_ROLE: compliance. Adds and removes accounts from the allowlist.
+///      Governance and compliance are separate duties: the admin cannot change the
+///      allowlist unless it explicitly (and visibly, via RoleGranted) grants itself
+///      ALLOWLIST_ROLE.
 ///
 ///      Every balance change in OpenZeppelin 5.x ERC20 (transfer, transferFrom, mint,
 ///      burn) goes through `_update`, so the pause and allowlist checks live there and
@@ -21,6 +26,7 @@ import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 contract SettlementToken is ERC20, AccessControl, Pausable {
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+    bytes32 public constant ALLOWLIST_ROLE = keccak256("ALLOWLIST_ROLE");
 
     mapping(address account => bool) private _allowlisted;
 
@@ -64,7 +70,7 @@ contract SettlementToken is ERC20, AccessControl, Pausable {
         _unpause();
     }
 
-    function setAllowlisted(address account, bool allowed) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setAllowlisted(address account, bool allowed) external onlyRole(ALLOWLIST_ROLE) {
         if (account == address(0)) revert InvalidAccount(account);
         _allowlisted[account] = allowed;
         emit AllowlistUpdated(account, allowed);
