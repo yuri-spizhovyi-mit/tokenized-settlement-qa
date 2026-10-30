@@ -46,6 +46,19 @@ safe to re-run.
 CI does not use the script. It uses `foundry-rs/foundry-toolchain`. If you
 bump the Foundry version, change it in both places.
 
+**Use the pinned Foundry version (v1.8.7) locally too.** `.gas-snapshot` is only
+reproducible with the forge version that wrote it. With forge v1.7.1 or older,
+`forge snapshot --check` fails on 91 of 92 entries, even though every test
+passes. Outside the cloud session, install the pinned version with:
+
+```bash
+foundryup --install v1.8.7
+```
+
+Bumping Foundry therefore means three places: `scripts/cloud-setup.sh`,
+`.github/workflows/contracts.yml`, and a regenerated `contracts/.gas-snapshot`
+in the same commit.
+
 Day-to-day:
 
 ```bash
