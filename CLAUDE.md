@@ -24,7 +24,7 @@ contracts/          Foundry project
   lib/              forge-std, openzeppelin-contracts (git submodules, pinned tags)
 services/           indexer/, transfer-api/ (Python)
 tests/              integration/, reconciliation/, ui/, load/
-docs/               plan.md, test strategy, RTM, security plan, reports
+docs/               plan.md, decisions.md, test strategy, RTM, security plan, reports
 scripts/            cloud-setup.sh
 .github/workflows/  contracts.yml (more workflows land with later PRs)
 ```
@@ -52,6 +52,7 @@ Day-to-day:
 cd contracts
 forge build --sizes
 forge test -vvv
+forge snapshot --check   # CI fails if gas moved; run `forge snapshot` and commit if intended
 ```
 
 ## Working rules
@@ -84,3 +85,5 @@ forge test -vvv
   (`vm.expectEmit`), and counterparties' balances.
 - Every PR description says what the tests *found* and explains one test as a
   teaching example.
+- A behaviour choice the spec leaves open (a boundary, who may call what, what
+  input is rejected) gets a test **and** an entry in `docs/decisions.md`.
