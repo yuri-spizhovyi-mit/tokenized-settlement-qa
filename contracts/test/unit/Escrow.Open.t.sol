@@ -115,6 +115,51 @@ contract EscrowOpenTest is EscrowBase {
         assertEq(escrow.nextId(), 0);
     }
 
+    /// @notice ESC-03: the deadline must be in the future. `deadline == now` would make the
+    ///         deal refundable in the same block it opens, giving the arbiter no window;
+    ///         it is rejected like any past deadline. Decision ESC-D6.
+    function test_RevertWhen_OpenWithDeadlineEqualToNow() public {
+        uint64 nowTs = uint64(vm.getBlockTimestamp());
+        Balances memory before = _balances();
+
+        vm.prank(payer);
+        vm.expectRevert(abi.encodeWithSelector(Escrow.DeadlineInPast.selector, nowTs));
+        escrow.open(payee, AMOUNT, nowTs);
+
+        _assertBalancesUnchanged(before);
+        assertEq(escrow.nextId(), 0, "id consumed by a failed open");
+    }
+
+    /// @notice ESC-03: one second in the past is rejected, with the offending deadline.
+    function test_RevertWhen_OpenWithDeadlineOneSecondAgo() public {
+        uint64 past = uint64(vm.getBlockTimestamp()) - 1;
+
+        vm.prank(payer);
+        vm.expectRevert(abi.encodeWithSelector(Escrow.DeadlineInPast.selector, past));
+        escrow.open(payee, AMOUNT, past);
+
+        assertEq(escrow.nextId(), 0);
+    }
+
+    /// @notice ESC-03: one second in the future is the earliest valid deadline. The deal
+    ///         opens Funded, and is refundable one second later, not before.
+    function test_Open_AcceptsDeadlineOneSecondAhead() public {
+        uint64 soon = uint64(vm.getBlockTimestamp()) + 1;
+
+        vm.prank(payer);
+        uint256 id = escrow.open(payee, AMOUNT, soon);
+        _assertDeal(id, payer, payee, AMOUNT, soon, Escrow.State.Funded);
+
+        vm.prank(payer);
+        vm.expectRevert(abi.encodeWithSelector(Escrow.TooEarly.selector, soon));
+        escrow.refund(id);
+
+        vm.warp(soon);
+        vm.prank(payer);
+        escrow.refund(id);
+        _assertDeal(id, payer, payee, AMOUNT, soon, Escrow.State.Refunded);
+    }
+
     /// @notice ESC-02: open is all-or-nothing; without enough allowance no deal exists.
     function test_RevertWhen_OpenWithoutAllowance() public {
         vm.prank(payer);

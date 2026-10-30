@@ -47,9 +47,10 @@ at which a retry will succeed.
 
 **Timestamp manipulation:** block producers can skew `block.timestamp` by a few
 seconds. Escrow deadlines are measured in days, so this doesn't matter. Slither's
-`timestamp` detector and forge-lint's `block-timestamp` both flag this comparison.
-It is intended: the lint is suppressed at that line with a reference to this
-entry, and the Slither result goes in the PR 5 triage log.
+`timestamp` detector and forge-lint's `block-timestamp` both flag this comparison
+and the one in `open` (ESC-D6). Both are intended: the lint is suppressed at each
+line with a reference to this file, and the Slither results go in the PR 5 triage
+log.
 
 **Tests:** `test_RevertWhen_RefundOneSecondBeforeDeadline`,
 `test_Refund_SucceedsExactlyAtDeadline`.
@@ -95,8 +96,6 @@ would let a payer race the arbiter's transaction.
 
 **Not rejected, on purpose:**
 - `payee == payer`: odd but harmless; it acts as a time-locked self-transfer.
-- A deadline in the past: the deal is refundable immediately, which only affects the
-  payer's own funds.
 - A payee that isn't allowlisted: the escrow only knows `IERC20` and can't ask the
   token. The token blocks the payout, and the funds stay refundable (see ESC-D5).
 
@@ -124,6 +123,38 @@ call. Consequences:
   After unpause they settle normally.
 
 **Tests:** `contracts/test/unit/Escrow.TokenControls.t.sol` (all of it).
+
+---
+
+## ESC-D6: `open` rejects a deadline that is not in the future
+
+**Status:** Accepted (PR 3, review change)
+
+**Decision:** `open` reverts with `DeadlineInPast(deadline)` when
+`deadline <= block.timestamp`. The earliest valid deadline is `block.timestamp + 1`.
+
+**Why reject rather than allow:**
+- A deadline at or before now makes the deal refundable in the same block it opens
+  (ESC-D2: refund needs `block.timestamp >= deadline`). The arbiter gets no window
+  at all, so the "deal" is a round trip with extra steps and false `Opened` /
+  `Refunded` records for the indexer.
+- In practice it's almost always a client bug: a timestamp in the wrong unit, a
+  stale quote, or a zero default. Failing loudly at `open` is
+  cheaper than reconciling a phantom deal later.
+- It matches ESC-D4: `open` rejects deals that can't do what a deal is for.
+
+**Why `deadline == now` is rejected too:** the boundary follows from ESC-D2. Refund
+is allowed *at* the deadline, so a deadline equal to now is already refundable.
+Allowing it would make `now` and `now - 1` behave identically from the payer's
+side, while being treated differently at `open`.
+
+**Not enforced:** a minimum duration (e.g. one hour). One second is enough to stop
+the same-block refund, and a business minimum belongs to the caller.
+
+**Tests:** `test_RevertWhen_OpenWithDeadlineEqualToNow`,
+`test_RevertWhen_OpenWithDeadlineOneSecondAgo`, `test_Open_AcceptsDeadlineOneSecondAhead`.
+The `<=` → `<` mutant is caught only by the `== now` test, which is why that case
+has its own test.
 
 ---
 

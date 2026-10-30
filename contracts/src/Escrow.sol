@@ -16,7 +16,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 ///      refund. A payout the token refuses reverts the whole call, so the deal stays
 ///      Funded and the funds stay here.
 ///
-///      Decisions (refund caller, deadline boundary, input validation) are recorded in
+///      Decisions (refund caller, deadline boundaries, input validation) are recorded in
 ///      docs/decisions.md.
 contract Escrow {
     using SafeERC20 for IERC20;
@@ -65,6 +65,8 @@ contract Escrow {
     error ZeroAmount();
     /// @notice `payee` could never be paid: the zero address or this escrow.
     error InvalidPayee(address payee);
+    /// @notice `deadline` is not in the future, so the deal would be refundable at once.
+    error DeadlineInPast(uint64 deadline);
     /// @notice The constructor was given the zero address for the token or arbiter.
     error ZeroAddress();
 
@@ -75,10 +77,13 @@ contract Escrow {
     }
 
     /// @notice Opens a deal and pulls `amount` from the caller (the payer) into escrow.
-    ///         The caller must have approved this contract for at least `amount`.
+    ///         The caller must have approved this contract for at least `amount`, and
+    ///         `deadline` must be strictly in the future.
     function open(address payee, uint128 amount, uint64 deadline) external returns (uint256 id) {
         if (amount == 0) revert ZeroAmount();
         if (payee == address(0) || payee == address(this)) revert InvalidPayee(payee);
+        // forge-lint: disable-next-line(block-timestamp) day-scale deadlines; see docs/decisions.md
+        if (deadline <= block.timestamp) revert DeadlineInPast(deadline);
 
         id = nextId++;
         deals[id] = Deal(msg.sender, payee, amount, deadline, State.Funded);

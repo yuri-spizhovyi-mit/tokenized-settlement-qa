@@ -10,8 +10,9 @@ import {Escrow} from "../../src/Escrow.sol";
 ///      ESC-01  Deployment: token and arbiter are fixed at construction; zero rejected.
 ///      ESC-02  open records the deal, pulls exactly `amount` from the payer into
 ///              escrow, and emits Opened with every field.
-///      ESC-03  open rejects a zero amount and a payee that could never be paid
-///              (zero address, or the escrow itself).
+///      ESC-03  open rejects a zero amount, a payee that could never be paid (zero
+///              address, or the escrow itself), and a deadline that is not in the
+///              future (deadline <= block.timestamp).
 ///      ESC-04  Only the arbiter can release; release pays the payee in full and
 ///              marks the deal Released.
 ///      ESC-05  Anyone can refund once block.timestamp >= deadline; refund pays the
