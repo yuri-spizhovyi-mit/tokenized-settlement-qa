@@ -1,0 +1,23 @@
+# Foundry
+contracts/out/
+contracts/cache/
+contracts/broadcast/*/31337/
+contracts/broadcast/**/dry-run/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# Node
+node_modules/
+
+# Reports and local state
+allure-results/
+allure-report/
+*.sqlite
+*.db
+.env
+.env.*
+!.env.example

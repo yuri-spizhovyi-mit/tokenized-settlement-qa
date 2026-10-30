@@ -1,0 +1,27 @@
+[profile.default]
+src = "src"
+test = "test"
+script = "script"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.28"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+# Offline mode is never committed here: CI's foundry-toolchain downloads
+# solc normally. scripts/cloud-setup.sh sets `offline = true` and the
+# local solc path in the global ~/.foundry/foundry.toml instead.
+
+[fuzz]
+runs = 256
+
+[invariant]
+runs = 256
+depth = 64
+fail_on_revert = false
+
+[profile.ci.fuzz]
+runs = 1024
+
+[fmt]
+line_length = 100
