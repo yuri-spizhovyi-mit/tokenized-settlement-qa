@@ -7,7 +7,8 @@ import {Escrow} from "../../src/Escrow.sol";
 
 /// @notice Shared fixture for the Escrow unit suites.
 /// @dev Requirements covered by the suites (IDs are used in test NatSpec and the RTM):
-///      ESC-01  Deployment: token and arbiter are fixed at construction; zero rejected.
+///      ESC-01  Deployment: token is fixed; arbiter and escrow admin are set (the arbiter
+///              is rotatable since PR 5, SEC-07); zero for any of them is rejected.
 ///      ESC-02  open records the deal, pulls exactly `amount` from the payer into
 ///              escrow, and emits Opened with every field.
 ///      ESC-03  open rejects a zero amount, a payee that could never be paid (zero
@@ -33,6 +34,9 @@ abstract contract EscrowBase is Test {
     address internal pauser = makeAddr("pauser");
     address internal compliance = makeAddr("compliance");
     address internal arbiter = makeAddr("arbiter");
+    /// @dev Same derivation as makeAddr("arbiter"), so the arbiter can sign (SEC-10..).
+    uint256 internal arbiterKey = uint256(keccak256(abi.encodePacked("arbiter")));
+    address internal escrowAdmin = makeAddr("escrowAdmin"); // rotates the arbiter
     address internal payer = makeAddr("payer");
     address internal payee = makeAddr("payee");
     address internal stranger = makeAddr("stranger"); // allowlisted, no role in the escrow
@@ -47,7 +51,7 @@ abstract contract EscrowBase is Test {
         vm.warp(1_700_000_000); // a realistic timestamp, so "deadline - 1" never underflows
 
         token = new SettlementToken(admin);
-        escrow = new Escrow(token, arbiter);
+        escrow = new Escrow(token, arbiter, escrowAdmin);
         deadline = uint64(block.timestamp) + DURATION;
 
         vm.startPrank(admin);

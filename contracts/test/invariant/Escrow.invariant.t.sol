@@ -36,7 +36,7 @@ contract EscrowInvariantTest is Test {
     function setUp() public {
         vm.warp(1_700_000_000);
         token = new SettlementToken(admin);
-        escrow = new Escrow(token, arbiter);
+        escrow = new Escrow(token, arbiter, makeAddr("escrowAdmin"));
         handler = new EscrowHandler(token, escrow, arbiter, pauser, compliance, minter);
 
         vm.startPrank(admin);
