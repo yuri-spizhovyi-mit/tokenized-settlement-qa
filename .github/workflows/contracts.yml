@@ -38,10 +38,62 @@ jobs:
       - name: Build (with contract sizes)
         run: forge build --sizes
 
+      # Unit, fuzz (10,000 runs) and invariant suites under the ci profile.
+      # Fork tests run in the fork job below.
       - name: Test
-        run: forge test -vvv
+        run: forge test -vvv --no-match-path 'test/fork/*'
 
-      # Fails if any test's gas differs from the committed contracts/.gas-snapshot.
-      # After an intended gas change, run `forge snapshot` and commit the result.
+      # Fails if any unit test's gas differs from the committed contracts/.gas-snapshot.
+      # Scoped to test/unit: fuzz and invariant gas depends on random inputs and run
+      # counts, so it can't be pinned. After an intended gas change, run
+      # `forge snapshot --match-path 'test/unit/*'` and commit the result.
       - name: Gas snapshot
-        run: forge snapshot --check
+        run: forge snapshot --check --match-path 'test/unit/*'
+
+  # Secrets can't be read in a job-level `if`, so a gate job turns "is the secret
+  # set?" into an output. PRs from forks get no secrets, and their fork job is skipped.
+  fork-gate:
+    name: fork tests enabled?
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - id: check
+        env:
+          MAINNET_RPC_URL: ${{ secrets.MAINNET_RPC_URL }}
+        run: |
+          if [ -n "$MAINNET_RPC_URL" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Fork tests skipped::MAINNET_RPC_URL secret is not set"
+          fi
+
+  fork:
+    name: forge fork tests (mainnet USDC)
+    needs: fork-gate
+    if: needs.fork-gate.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    env:
+      MAINNET_RPC_URL: ${{ secrets.MAINNET_RPC_URL }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.7
+
+      # The fork is pinned to a block, so cached RPC state stays valid across runs.
+      - name: Cache fork RPC responses
+        uses: actions/cache@v4
+        with:
+          path: ~/.foundry/cache/rpc
+          key: foundry-rpc-mainnet-21000000
+
+      - name: Fork tests
+        run: forge test -vvv --match-path 'test/fork/*'
