@@ -19,9 +19,16 @@ runs = 256
 runs = 256
 depth = 64
 fail_on_revert = false
+show_metrics = true
 
+# CI: 10,000 fuzz runs per property and a deeper invariant campaign. Local runs keep
+# the defaults above for a fast loop; run `FOUNDRY_PROFILE=ci forge test` to match CI.
 [profile.ci.fuzz]
-runs = 1024
+runs = 10000
+
+[profile.ci.invariant]
+runs = 512
+depth = 256
 
 [fmt]
 line_length = 100
