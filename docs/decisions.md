@@ -278,7 +278,57 @@ separate duties, as on the token (TOK-04).
 
 ---
 
+## TOK-D1: Account freeze and forced transfer are out of scope
+
+**Status:** Accepted (PR 6, closes #4)
+
+**Decision:** `SettlementToken` has no account-level freeze separate from the
+allowlist, and no forced transfer (seizure). There's also no `burnFrom` by the
+issuer: `burn` only ever burns the minter's own balance (TOK-02).
+
+**What covers the need today:** delisting. `setAllowlisted(account, false)` by
+`ALLOWLIST_ROLE` blocks every movement in or out of the account: it can't send,
+receive, or have an allowance spent (TOK-05, TOK-06). That's a full freeze, applied
+in the same block, and the balance stays exactly where it is. The tests assert
+"delisting must not seize funds" (`test_RevertWhen_SenderDelistedBeforeTransfer`).
+
+**Why out of scope:**
+- **The project's scope is the settlement flow.** Seizure is a different product:
+  it needs a legal basis, a process, and evidence trails that this repo can't model
+  honestly.
+- **A seizure power is the largest trust assumption a token can carry.** It means
+  any holder's balance can move without their consent. Adding it "for completeness"
+  would weaken every other guarantee the tests prove (TOK-05: only allowlisted
+  parties move value).
+- **Delisting is reversible and leaves balances intact; seizure isn't and doesn't.**
+  Shipping the reversible control first is the conservative order.
+
+**What a regulated token would need to add it safely:**
+
+| Element | Requirement |
+|---|---|
+| Separate roles | `FREEZER_ROLE` for account-level freeze, distinct from `ALLOWLIST_ROLE` (onboarding is not enforcement), and `ENFORCER_ROLE` for forced transfer, held by a different multisig than the freezer, so no single key can both freeze and seize. Both administered by `DEFAULT_ADMIN_ROLE`, with its two-day handover (SEC-D2). |
+| Freeze semantics | `frozen[account]` checked in `_update` next to the allowlist. A frozen account keeps its listing, so unfreezing restores it without re-onboarding. Event `AccountFrozen(account, reason)`. |
+| Forced transfer | `forceTransfer(from, to, amount, bytes32 caseRef)`, which bypasses the sender's consent but **not** the recipient's allowlisting. Event `ForcedTransfer(from, to, amount, caseRef)`, with `caseRef` linking to the off-chain legal order. Optionally time-locked so the holder can contest. |
+| Tests | A role matrix row per new function; "seizure never changes `totalSupply`" as an invariant; "a frozen account can still receive a forced return"; event fields asserted for audit reconstruction; and freeze + pause + delist interaction tests. |
+
+**Who would hold the roles:**
+- **`FREEZER_ROLE`:** the compliance operations team. Day-to-day sanctions hits;
+  fast and reversible.
+- **`ENFORCER_ROLE`:** legal or the issuer's board multisig. Rare, slow, and
+  irreversible. It should never be the same keys as `FREEZER_ROLE` or
+  `MINTER_ROLE`.
+- **`DEFAULT_ADMIN_ROLE`:** governance, which appoints both and can't exercise
+  either.
+
+**Revisit when:** a milestone needs court-ordered recovery, or the token targets a
+regime that mandates it, such as tokenised deposits under a specific regulator.
+
+**Tests today:** `SettlementToken.Allowlist.t.sol` (delisting freezes and doesn't
+seize).
+
+---
+
 ## Open
 
-- Freeze and forced transfer for `SettlementToken` are out of scope. The entry is
-  tracked in issue #4.
+- None. Issue #4 is recorded above as TOK-D1.
