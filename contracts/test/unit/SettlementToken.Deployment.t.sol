@@ -2,6 +2,9 @@
 pragma solidity 0.8.28;
 
 import {SettlementTokenBase} from "./SettlementTokenBase.t.sol";
+import {
+    IAccessControlDefaultAdminRules
+} from "@openzeppelin/contracts/access/extensions/IAccessControlDefaultAdminRules.sol";
 import {SettlementToken} from "../../src/SettlementToken.sol";
 
 /// @notice TOK-01: the token deploys into a known, minimal-privilege state.
@@ -53,8 +56,14 @@ contract SettlementTokenDeploymentTest is SettlementTokenBase {
     }
 
     /// @notice TOK-01: a zero admin would leave the token with no one able to grant roles.
+    ///         Rejected by the OpenZeppelin AccessControlDefaultAdminRules constructor.
     function test_RevertWhen_AdminIsZeroAddress() public {
-        vm.expectRevert(abi.encodeWithSelector(SettlementToken.InvalidAdmin.selector, address(0)));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControlDefaultAdminRules.AccessControlInvalidDefaultAdmin.selector,
+                address(0)
+            )
+        );
         new SettlementToken(address(0));
     }
 }

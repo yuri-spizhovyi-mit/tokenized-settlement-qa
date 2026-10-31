@@ -2,7 +2,9 @@
 pragma solidity 0.8.28;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {
+    AccessControlDefaultAdminRules
+} from "@openzeppelin/contracts/access/extensions/AccessControlDefaultAdminRules.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
 /// @title SettlementToken
@@ -11,7 +13,10 @@ import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 ///         balance movements in an incident.
 /// @dev Roles:
 ///      - DEFAULT_ADMIN_ROLE: governance. Grants and revokes every role; holds no
-///        operational power itself.
+///        operational power itself. Exactly one holder, enforced by OpenZeppelin's
+///        AccessControlDefaultAdminRules: it can't be granted, revoked or renounced in
+///        one call. A handover is beginDefaultAdminTransfer -> wait ADMIN_DELAY ->
+///        acceptDefaultAdminTransfer by the new admin (issue #3, SEC-D2).
 ///      - MINTER_ROLE: mints to allowlisted accounts and burns its own balance
 ///        (redemption: a holder transfers to the issuer, the issuer burns).
 ///      - PAUSER_ROLE: pauses and unpauses.
@@ -23,10 +28,14 @@ import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 ///      Every balance change in OpenZeppelin 5.x ERC20 (transfer, transferFrom, mint,
 ///      burn) goes through `_update`, so the pause and allowlist checks live there and
 ///      cannot be bypassed by a code path that skips an overridden public function.
-contract SettlementToken is ERC20, AccessControl, Pausable {
+contract SettlementToken is ERC20, AccessControlDefaultAdminRules, Pausable {
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     bytes32 public constant ALLOWLIST_ROLE = keccak256("ALLOWLIST_ROLE");
+
+    /// @notice Minimum wait between scheduling and accepting an admin handover. Long
+    ///         enough to notice and cancel a hostile or mistaken transfer (SEC-D2).
+    uint48 public constant ADMIN_DELAY = 2 days;
 
     mapping(address account => bool) private _allowlisted;
 
@@ -34,15 +43,15 @@ contract SettlementToken is ERC20, AccessControl, Pausable {
 
     /// @notice `account` took part in a balance movement without being allowlisted.
     error AccountNotAllowlisted(address account);
-    /// @notice The constructor was given the zero address as admin.
-    error InvalidAdmin(address admin);
     /// @notice The zero address cannot be put on or taken off the allowlist.
     error InvalidAccount(address account);
 
-    constructor(address admin) ERC20("Settlement Token", "STK") {
-        if (admin == address(0)) revert InvalidAdmin(admin);
-        _grantRole(DEFAULT_ADMIN_ROLE, admin);
-    }
+    /// @dev A zero admin reverts with AccessControlInvalidDefaultAdmin(address(0)) from
+    ///      the OpenZeppelin base constructor.
+    constructor(address admin)
+        ERC20("Settlement Token", "STK")
+        AccessControlDefaultAdminRules(ADMIN_DELAY, admin)
+    {}
 
     function decimals() public pure override returns (uint8) {
         return 6;
