@@ -6,6 +6,7 @@ Engineer role, and a companion to *Testing the Chain*.
 
 - Roadmap and milestones: [`docs/plan.md`](docs/plan.md)
 - Behaviour decisions and the tests that pin them: [`docs/decisions.md`](docs/decisions.md)
+- What the tests found, with evidence: [`docs/findings.md`](docs/findings.md)
 - Contributor and agent rules: [`CLAUDE.md`](CLAUDE.md)
 
 The full README (architecture, findings, badges) lands with PR 12.
@@ -20,8 +21,12 @@ git submodule update --init
 cd contracts
 forge build --sizes
 forge test -vvv
-forge snapshot --check
+forge snapshot --check --match-path 'test/unit/*'
 ```
+
+`FOUNDRY_PROFILE=ci forge test` runs CI's settings: 10,000 fuzz runs per property and
+512 × 256 invariant calls. Fork tests against mainnet USDC need `MAINNET_RPC_URL`;
+without it they are skipped.
 
 > **The Foundry version matters.** `contracts/.gas-snapshot` records gas per test
 > and is checked in CI. Gas accounting differs between forge releases. With
