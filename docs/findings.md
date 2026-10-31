@@ -11,9 +11,10 @@ sequence or test output) and the outcome.
 | F-03 | invariants, `fail_on_revert` | harness bug: overflow on `uint256.max` seed | fixed in handler |
 | F-04 | invariant call summary | harness gap: runs mostly frozen by token controls | fixed by steering |
 | F-05 | CI dry run | `forge snapshot --check` breaks on fuzz/invariant/fork entries | snapshot scoped to unit tests |
+| F-06 | first executed fork job | RPC cache configured twice, one keyed per commit | toolchain cache off in fork job |
 
-No real defect in `SettlementToken` or `Escrow` was found by the fuzz or invariant
-suites in PR 4. Each has been re-run at 10,000 fuzz runs and 512 × 256 invariant
+No real defect in `SettlementToken` or `Escrow` was found by the fuzz, invariant or
+fork suites in PR 4. All 7 USDC fork tests passed on their first execution in CI. Each has been re-run at 10,000 fuzz runs and 512 × 256 invariant
 calls under the `ci` profile.
 
 ---
@@ -160,3 +161,42 @@ entries added, fuzz gas is a mean over random inputs and changes with the run co
 
 **Fix:** generate and check the snapshot with `--match-path 'test/unit/*'`. Recorded
 as PROP-D2 in `docs/decisions.md`.
+
+## F-06: the fork job cached Foundry's RPC state twice
+
+**Found by:** the first fork job that actually executed (run 41232780712, attempt 2,
+after the `MAINNET_RPC_URL` repository secret was added). All 7 fork tests passed:
+
+```
+Ran 7 tests for test/fork/Escrow.usdc.fork.t.sol:EscrowUsdcForkTest
+[PASS] test_Fork_RefundsAmountAboveUint64() (gas: 383764)
+[PASS] test_Fork_ReleasesOneBaseUnit() (gas: 310553)
+[PASS] test_Fork_ReleasesSixDecimalAmountExactly() (gas: 333976)
+[PASS] test_Fork_RevertWhen_EscrowBlacklistedFreezesPayouts() (gas: 360699)
+[PASS] test_Fork_RevertWhen_PayeeBlacklistedBeforeRelease() (gas: 418556)
+[PASS] test_Fork_RevertWhen_PayerBlacklistedAtOpen() (gas: 201827)
+[PASS] test_Fork_UsdcHasSixDecimals() (gas: 29829)
+Suite result: ok. 7 passed; 0 failed; 0 skipped
+```
+
+The log showed two caches of the same `~/.foundry/cache/rpc` directory:
+
+| Cache | Key | Problem |
+|---|---|---|
+| `foundry-toolchain@v1` (`cache: true` by default) | `linux-foundry-chain-fork-fork-<merge sha>` | a new entry on every commit |
+| the workflow's own `actions/cache` step | `foundry-rpc-mainnet-21000000` | none: tied to the pinned block, valid across commits |
+
+The two restores race for one directory, and the per-commit entries pile up against
+the repository's cache quota.
+
+**Fix:** `cache: false` on the toolchain step in the fork job. The pinned-block cache
+is now the only one, and its key is bumped together with `FORK_BLOCK`.
+
+**Secret handling, checked in the same log:** every occurrence of `MAINNET_RPC_URL`
+is masked as `***`, and the only URLs in the whole job log are `github.com` and
+`github.blog`. The RPC host does not appear, not even in forge output.
+
+**Also learned:** before the secret was a *repository* secret, the gate job logged
+`MAINNET_RPC_URL: ` (empty) on both a re-run and a fresh run, and the fork job was
+skipped. An empty value in the gate's `env:` block means Actions can't see the
+secret. A secret that exists shows as `***`.
