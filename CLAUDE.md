@@ -24,7 +24,7 @@ contracts/          Foundry project
   lib/              forge-std, openzeppelin-contracts (git submodules, pinned tags)
 services/           indexer/, transfer-api/ (Python)
 tests/              integration/, reconciliation/, ui/, load/
-docs/               plan.md, decisions.md, test strategy, RTM, security plan, reports
+docs/               plan.md, decisions.md, findings.md, test strategy, RTM, security plan, reports
 scripts/            cloud-setup.sh
 .github/workflows/  contracts.yml (more workflows land with later PRs)
 ```
@@ -65,7 +65,8 @@ Day-to-day:
 cd contracts
 forge build --sizes
 forge test -vvv
-forge snapshot --check   # CI fails if gas moved; run `forge snapshot` and commit if intended
+forge snapshot --check --match-path 'test/unit/*'   # CI fails if unit-test gas moved
+FOUNDRY_PROFILE=ci forge test   # CI's settings: 10,000 fuzz runs, 512 x 256 invariant calls
 ```
 
 ## Working rules
@@ -77,7 +78,12 @@ forge snapshot --check   # CI fails if gas moved; run `forge snapshot` and commi
   without a written reason in the PR.
 - **Run the full suite before pushing** (`forge test -vvv` from
   `contracts/`, plus any Python suites the PR touches). Do not push red.
-- Mainnet fork tests and long nightly runs execute in CI only.
+- Mainnet fork tests and long nightly runs execute in CI only. Fork tests skip
+  themselves when `MAINNET_RPC_URL` is unset; CI runs them in a separate job only
+  when that secret exists.
+- After an intended gas change, regenerate with
+  `forge snapshot --match-path 'test/unit/*'` (fuzz, invariant and fork gas can't be
+  pinned; see PROP-D2 in `docs/decisions.md`).
 - The indexer uses SQLite in sessions and Postgres in CI.
 
 ## Test conventions
@@ -100,3 +106,9 @@ forge snapshot --check   # CI fails if gas moved; run `forge snapshot` and commi
   teaching example.
 - A behaviour choice the spec leaves open (a boundary, who may call what, what
   input is rejected) gets a test **and** an entry in `docs/decisions.md`.
+- **Fuzz:** shape inputs with `bound()`; use `vm.assume` only to exclude specific
+  addresses.
+- **Invariants:** the handler catches reverts, so run with `fail_on_revert = true`,
+  and check the call summary to confirm runs reach live states (`docs/findings.md`,
+  F-02 to F-04).
+- Findings, planted or real, go in `docs/findings.md` with their evidence.
