@@ -158,6 +158,38 @@ has its own test.
 
 ---
 
+## PROP-D1: Fork tests assert USDC's revert strings
+
+**Status:** Accepted (PR 4)
+
+**Decision:** The USDC fork tests assert
+`vm.expectRevert(bytes("Blacklistable: account is blacklisted"))`.
+
+**Why:** CLAUDE.md requires exact custom errors, but USDC (FiatTokenV2_2) reverts
+with `require` strings, and its error format belongs to Circle. Asserting the exact
+string is the strictest check available. A bare `vm.expectRevert()` would still be
+wrong, because a revert for another reason, such as a pause or an allowance, must
+fail the test.
+
+**Tests:** `contracts/test/fork/Escrow.usdc.fork.t.sol`.
+
+---
+
+## PROP-D2: The gas snapshot covers unit tests only
+
+**Status:** Accepted (PR 4)
+
+**Decision:** `.gas-snapshot` is generated and checked with
+`--match-path 'test/unit/*'`.
+
+**Why:** fuzz gas is a mean over random inputs and depends on the run count (256
+locally, 10,000 under `ci`). Invariant entries report calls and reverts, not gas.
+Fork tests are skipped without an RPC URL. None of them can be pinned, and including
+them made `forge snapshot --check` fail (finding F-05). Unit tests have fixed inputs,
+so their gas is a real regression signal.
+
+---
+
 ## Open
 
 - Freeze and forced transfer for `SettlementToken` are out of scope. The entry is
