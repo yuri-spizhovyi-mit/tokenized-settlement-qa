@@ -73,7 +73,9 @@ jobs:
       - uses: crytic/slither-action@v0.4.1
         with:
           target: contracts
-          slither-version: 0.11.6
+          # 0.11.5+ needs Python >= 3.10, newer than the action's container ships
+          # (docs/findings.md, F-10). Keep in step with scripts/cloud-setup.sh.
+          slither-version: 0.11.4
           slither-config: contracts/slither.config.json
           ignore-compile: true
           fail-on: high

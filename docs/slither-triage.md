@@ -6,7 +6,9 @@ Every Slither result on `contracts/src/`, with a verdict:
 - **False positive:** the detector is wrong here, and the reason is given.
 - **Accepted risk:** real, deliberate, with an owner who revisits it.
 
-Run with Slither 0.11.6, the version pinned in CI and in `scripts/cloud-setup.sh`:
+Run with Slither **0.11.4**, the version pinned in CI and in `scripts/cloud-setup.sh`.
+`crytic/slither-action`'s container can't install 0.11.5+ (F-10). I checked 0.11.6
+locally too: identical verdicts, minus the two lib-only results #12 and #13 below.
 
 ```bash
 cd contracts
@@ -26,7 +28,7 @@ slither . --ignore-compile --filter-paths "lib/|test/"                     # inc
 - **Proof that it bites:** with `src/vulnerable/` back in scope, `--fail-high` exits
   255 on `reentrancy-eth` (PR 5, run locally).
 
-## Results in the gated scope (5 total; 0 High; gate passes)
+## Results in the gated scope (7 total; 0 High; gate passes)
 
 | # | Detector | Severity | Location | Verdict | Reason / owner |
 |---|---|---|---|---|---|
@@ -35,6 +37,8 @@ slither . --ignore-compile --filter-paths "lib/|test/"                     # inc
 | 3 | `timestamp` | Low | `Escrow.releaseWithSig`: `block.timestamp > deadline` | **Accepted risk** | Signature deadlines are minutes to hours long; a few seconds of skew can't extend one meaningfully. SEC-D3. Owner: Escrow maintainer. |
 | 4 | `unused-return` | Medium | `Escrow.releaseWithSig`: `ECDSA.tryRecover` | **False positive** | `recovered` and `err` are both checked: any error or a non-arbiter signer reverts with `InvalidSignature`. Only the third value, `errArg` (diagnostic detail), is unused, on purpose. Covered by SEC-11 to SEC-16, including the malleated-signature test. |
 | 5 | `naming-convention` | Informational | `Escrow.DOMAIN_SEPARATOR()` | **False positive** | `DOMAIN_SEPARATOR` is the name EIP-2612 and wallets expect. Renaming it would break the interface. |
+| 12 | `unindexed-event-address` | Informational | OZ `Pausable.Paused(address)`, inherited by SettlementToken (`lib/`) | **False positive (out of scope)** | OpenZeppelin's own event signature; changing it would break indexers that expect the standard event. Slither 0.11.4 reports it despite the `lib/` filter, because it's inherited; 0.11.6 does not. |
+| 13 | `unindexed-event-address` | Informational | OZ `Pausable.Unpaused(address)` (`lib/`) | **False positive (out of scope)** | Same as #12. |
 
 ## Results outside the gate: `src/vulnerable/` (6 total; 2 High)
 

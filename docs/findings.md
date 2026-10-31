@@ -15,6 +15,7 @@ sequence or test output) and the outcome.
 | F-07 | design review + mutant S6 | rotating the arbiter back would revive its old signatures | `setArbiter` consumes the outgoing arbiter's nonce |
 | F-08 | issue #3 regression | the old "admin renounces" test now reverts, as intended | test rewritten to the deliberate path |
 | F-09 | exploit test SEC-01 | planted re-entrancy drains 10 ETH with a 1 ETH stake | fixed twice (CEI, nonReentrant), regressions proven |
+| F-10 | first CI run of the Slither gate | the action's container can't install the pinned Slither 0.11.6 | Slither pinned to 0.11.4 in CI and locally |
 
 No real defect in `SettlementToken` or `Escrow` was found by the fuzz, invariant or
 fork suites in PR 4. All 7 USDC fork tests passed on their first execution in CI.
@@ -268,3 +269,36 @@ Afterwards the ledger still shows each depositor owed 2 ETH, and an honest
 | `GuardedVault` (`nonReentrant`, vulnerable order kept) | the inner call reverts with `ReentrancyGuardReentrantCall` | V1 (no modifier) fails 2 regressions |
 
 Both fixed vaults still pay every honest depositor in full (SEC-04).
+
+## F-10: the Slither gate's first CI run failed before analysing anything
+
+**Found by:** the first run of the `slither` job on PR 5 (run 41238394466):
+
+```
+[-] SLITHERVER provided, installing slither-analyzer==0.11.6
+ERROR: Ignored the following versions that require a different python version:
+       0.11.5 Requires-Python >=3.10; 0.11.6 Requires-Python >=3.10
+ERROR: No matching distribution found for slither-analyzer==0.11.6
+```
+
+**Cause:** `crytic/slither-action@v0.4.1` installs Slither inside a container whose
+Python is older than 3.10. Slither 0.11.5 and later need 3.10. Local runs used
+0.11.6 (from `scripts/cloud-setup.sh`), so the triage had been done on a version
+CI can't run.
+
+**Fix:** pin **0.11.4**, the newest the container can install, in both CI and
+`scripts/cloud-setup.sh`, so local and CI results match exactly. Re-checked locally
+with both versions:
+
+| | 0.11.4 | 0.11.6 |
+|---|---|---|
+| Detectors | 100 | 102 |
+| Gated results | 7 | 5 |
+| `--fail-high` exit (gate) | 0 | 0 |
+| Exit with `src/vulnerable/` in scope | 255 | 255 |
+
+The two extra 0.11.4 results are informational notes on OpenZeppelin's inherited
+`Pausable` events (triage #12 and #13). The gate verdict is the same on both.
+
+**Lesson:** pin the analyser version *and* run it where CI runs it. A tool version
+that only works locally is a gate that has never run.
