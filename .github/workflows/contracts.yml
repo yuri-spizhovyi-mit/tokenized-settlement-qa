@@ -50,6 +50,36 @@ jobs:
       - name: Gas snapshot
         run: forge snapshot --check --match-path 'test/unit/*'
 
+  # Static analysis gate: fails on any High finding outside lib/, test/ and the
+  # deliberately vulnerable fixtures in src/vulnerable/ (contracts/slither.config.json).
+  # Every finding, gated or not, is triaged in docs/slither-triage.md.
+  slither:
+    name: slither (fail on high)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.7
+
+      # Slither reads these artifacts instead of compiling inside its container.
+      - name: Build with build info
+        working-directory: contracts
+        run: forge build --build-info --skip './test/**' --skip './script/**'
+
+      - uses: crytic/slither-action@v0.4.1
+        with:
+          target: contracts
+          # 0.11.5+ needs Python >= 3.10, newer than the action's container ships
+          # (docs/findings.md, F-10). Keep in step with scripts/cloud-setup.sh.
+          slither-version: 0.11.4
+          slither-config: contracts/slither.config.json
+          ignore-compile: true
+          fail-on: high
+
   # Secrets can't be read in a job-level `if`, so a gate job turns "is the secret
   # set?" into an output. PRs from forks get no secrets, and their fork job is skipped.
   fork-gate:

@@ -51,7 +51,7 @@ contract EscrowUsdcForkTest is Test {
         }
         vm.createSelectFork(rpc, FORK_BLOCK);
 
-        escrow = new Escrow(IERC20(address(USDC)), arbiter);
+        escrow = new Escrow(IERC20(address(USDC)), arbiter, makeAddr("escrowAdmin"));
         deadline = uint64(vm.getBlockTimestamp()) + 7 days;
 
         _mintUsdc(payer, 10_000_000e6);

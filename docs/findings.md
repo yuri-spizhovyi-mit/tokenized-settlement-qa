@@ -12,9 +12,15 @@ sequence or test output) and the outcome.
 | F-04 | invariant call summary | harness gap: runs mostly frozen by token controls | fixed by steering |
 | F-05 | CI dry run | `forge snapshot --check` breaks on fuzz/invariant/fork entries | snapshot scoped to unit tests |
 | F-06 | first executed fork job | RPC cache configured twice, one keyed per commit | toolchain cache off in fork job |
+| F-07 | design review + mutant S6 | rotating the arbiter back would revive its old signatures | `setArbiter` consumes the outgoing arbiter's nonce |
+| F-08 | issue #3 regression | the old "admin renounces" test now reverts, as intended | test rewritten to the deliberate path |
+| F-09 | exploit test SEC-01 | planted re-entrancy drains 10 ETH with a 1 ETH stake | fixed twice (CEI, nonReentrant), regressions proven |
+| F-10 | first CI run of the Slither gate | the action's container can't install the pinned Slither 0.11.6 | Slither pinned to 0.11.4 in CI and locally |
 
 No real defect in `SettlementToken` or `Escrow` was found by the fuzz, invariant or
-fork suites in PR 4. All 7 USDC fork tests passed on their first execution in CI. Each has been re-run at 10,000 fuzz runs and 512 × 256 invariant
+fork suites in PR 4. All 7 USDC fork tests passed on their first execution in CI.
+PR 5 found one real design flaw in its own new code before it shipped (F-07), and
+fixed issue #3's flaw (F-08). Each has been re-run at 10,000 fuzz runs and 512 × 256 invariant
 calls under the `ci` profile.
 
 ---
@@ -200,3 +206,99 @@ is masked as `***`, and the only URLs in the whole job log are `github.com` and
 `MAINNET_RPC_URL: ` (empty) on both a re-run and a fresh run, and the fork job was
 skipped. An empty value in the gate's `env:` block means Actions can't see the
 secret. A secret that exists shows as `***`.
+
+---
+
+## F-07: rotating the arbiter back would revive its old signatures
+
+**Found by:** design review while adding `releaseWithSig` to a rotatable arbiter.
+Proven with mutant S6 in PR 5.
+
+**The flaw:** nonces are kept per arbiter address. A signature the arbiter issued
+but nobody submitted stays valid for as long as its nonce is current. Rotating the
+arbiter out hides that signature, because the signer is no longer `arbiter`.
+Rotating the *same* key back in makes it valid again. That's realistic: a key
+suspected compromised is rotated out, and then rotated back once cleared. Any
+signature an attacker collected in between would come back to life.
+
+**Fix:** `setArbiter` calls `_useNonce(previous)`, so every outstanding signature of
+the outgoing arbiter is void for good.
+
+**Evidence:** `test_RevertWhen_SignatureFromRotatedOutArbiter` rotates away and
+back, then submits the old signature: `InvalidSignature`. Removing the
+`_useNonce(previous)` line (mutant S6) makes exactly that test fail. Slither does not
+detect this (`docs/slither-triage.md`).
+
+## F-08: the test that documented the admin-renounce flaw now fails, as intended
+
+**Found by:** moving `SettlementToken` to `AccessControlDefaultAdminRules` (issue #3).
+
+PR 2's `test_RevertWhen_AdminActsAfterRenouncing` showed the flaw: an admin's
+one-call `renounceRole` left the token with no admin. With PR 5 that call reverts:
+
+```
+[FAIL: AccessControlEnforcedDefaultAdminDelay(0)] test_RevertWhen_AdminActsAfterRenouncing()
+```
+
+The schedule in the error is 0 because no transfer was scheduled. The test now uses
+the only remaining path: `beginDefaultAdminTransfer(address(0))`, then wait past the
+2-day delay, then renounce. It still proves compliance keeps working after
+governance is given up. The one-call renounce is tested on its own in
+`test_RevertWhen_AdminRenouncesWithoutScheduledTransfer`.
+
+## F-09: re-entrancy drain (planted, book Ch 9.1)
+
+**Source:** `contracts/src/vulnerable/Vault.sol`, deliberately vulnerable (SEC-D1).
+
+**Exploit** (`test_Exploit_ReentrancyDrainsVulnerableVault`):
+1. Five depositors put in 2 ETH each.
+2. The attacker deposits 1 ETH and calls `withdraw`.
+3. The vault sends ETH *before* zeroing the balance, so `receive()` re-enters
+   `withdraw` and is paid the same 1 ETH again.
+4. This repeats until the vault is empty: 10 re-entries, and the attacker leaves
+   with 11 ETH.
+
+Afterwards the ledger still shows each depositor owed 2 ETH, and an honest
+`withdraw` reverts with `TransferFailed`: the vault is insolvent.
+
+**Fixes, each proven by the same attack:**
+
+| Fix | Effect of the attack | Mutant that undoes the fix |
+|---|---|---|
+| `CeiVault` (checks-effects-interactions) | the re-entrant call hits `NothingToWithdraw`; the whole attack reverts | V2 (zeroing after the call) fails the CEI regression |
+| `GuardedVault` (`nonReentrant`, vulnerable order kept) | the inner call reverts with `ReentrancyGuardReentrantCall` | V1 (no modifier) fails 2 regressions |
+
+Both fixed vaults still pay every honest depositor in full (SEC-04).
+
+## F-10: the Slither gate's first CI run failed before analysing anything
+
+**Found by:** the first run of the `slither` job on PR 5 (run 41238394466):
+
+```
+[-] SLITHERVER provided, installing slither-analyzer==0.11.6
+ERROR: Ignored the following versions that require a different python version:
+       0.11.5 Requires-Python >=3.10; 0.11.6 Requires-Python >=3.10
+ERROR: No matching distribution found for slither-analyzer==0.11.6
+```
+
+**Cause:** `crytic/slither-action@v0.4.1` installs Slither inside a container whose
+Python is older than 3.10. Slither 0.11.5 and later need 3.10. Local runs used
+0.11.6 (from `scripts/cloud-setup.sh`), so the triage had been done on a version
+CI can't run.
+
+**Fix:** pin **0.11.4**, the newest the container can install, in both CI and
+`scripts/cloud-setup.sh`, so local and CI results match exactly. Re-checked locally
+with both versions:
+
+| | 0.11.4 | 0.11.6 |
+|---|---|---|
+| Detectors | 100 | 102 |
+| Gated results | 7 | 5 |
+| `--fail-high` exit (gate) | 0 | 0 |
+| Exit with `src/vulnerable/` in scope | 255 | 255 |
+
+The two extra 0.11.4 results are informational notes on OpenZeppelin's inherited
+`Pausable` events (triage #12 and #13). The gate verdict is the same on both.
+
+**Lesson:** pin the analyser version *and* run it where CI runs it. A tool version
+that only works locally is a gate that has never run.

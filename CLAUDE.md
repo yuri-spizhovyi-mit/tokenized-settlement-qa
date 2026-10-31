@@ -16,6 +16,7 @@ The full roadmap, milestones and definition of done are in
 ```text
 contracts/          Foundry project
   src/              SettlementToken, Escrow (from PR 2 on)
+  src/vulnerable/   DELIBERATELY VULNERABLE test fixtures (PR 5). Never deploy, never import from src/
   test/unit/        one behaviour per test
   test/fuzz/        property-based tests
   test/invariant/   handler + ghost-variable invariant suites
@@ -24,7 +25,7 @@ contracts/          Foundry project
   lib/              forge-std, openzeppelin-contracts (git submodules, pinned tags)
 services/           indexer/, transfer-api/ (Python)
 tests/              integration/, reconciliation/, ui/, load/
-docs/               plan.md, decisions.md, findings.md, test strategy, RTM, security plan, reports
+docs/               plan.md, decisions.md, findings.md, slither-triage.md, test strategy, RTM, reports
 scripts/            cloud-setup.sh
 .github/workflows/  contracts.yml (more workflows land with later PRs)
 ```
@@ -67,6 +68,9 @@ forge build --sizes
 forge test -vvv
 forge snapshot --check --match-path 'test/unit/*'   # CI fails if unit-test gas moved
 FOUNDRY_PROFILE=ci forge test   # CI's settings: 10,000 fuzz runs, 512 x 256 invariant calls
+# Slither, exactly as CI's gate runs it (fails on High):
+forge build --build-info --skip './test/**' --skip './script/**'
+slither . --ignore-compile --config-file slither.config.json --fail-high
 ```
 
 ## Working rules
@@ -112,3 +116,8 @@ FOUNDRY_PROFILE=ci forge test   # CI's settings: 10,000 fuzz runs, 512 x 256 inv
   and check the call summary to confirm runs reach live states (`docs/findings.md`,
   F-02 to F-04).
 - Findings, planted or real, go in `docs/findings.md` with their evidence.
+- **Security:** every Slither result gets a row in `docs/slither-triage.md` (fixed,
+  false positive with reason, or accepted risk with owner) before merge. A
+  `forge-lint: disable-next-line` needs a reason on the same or previous line.
+- Signed messages are tested for every replay: same signature twice, other chain,
+  other contract, expired, other deal (SEC-11 to SEC-15).

@@ -212,9 +212,14 @@ contract SettlementTokenRolesTest is SettlementTokenBase {
     }
 
     /// @notice TOK-06: an admin that renounces can no longer grant or revoke roles.
-    /// @dev This leaves the token with no admin at all; see the follow-up issue on
-    ///      AccessControlDefaultAdminRules. Existing role holders keep working.
+    /// @dev Since issue #3 (SEC-05), renouncing takes a scheduled transfer to address(0)
+    ///      and the full ADMIN_DELAY; a one-call renounce reverts (see the AdminRules
+    ///      suite). Existing role holders keep working after governance is given up.
     function test_RevertWhen_AdminActsAfterRenouncing() public {
+        vm.prank(admin);
+        token.beginDefaultAdminTransfer(address(0));
+        (, uint48 schedule) = token.pendingDefaultAdmin();
+        vm.warp(uint256(schedule) + 1);
         vm.prank(admin);
         token.renounceRole(DEFAULT_ADMIN_ROLE, admin);
         assertFalse(token.hasRole(DEFAULT_ADMIN_ROLE, admin));

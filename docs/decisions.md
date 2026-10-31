@@ -190,6 +190,94 @@ so their gas is a real regression signal.
 
 ---
 
+## SEC-D1: Deliberately vulnerable code lives in `src/vulnerable/` and is never deployable
+
+**Status:** Accepted (PR 5)
+
+**Decision:** `VulnerableVault` and its fixed versions (`CeiVault`, `GuardedVault`)
+live in `contracts/src/vulnerable/`. A banner marks them as test fixtures. No deploy
+script references them, and the Slither CI gate excludes the folder by path. Their
+findings are still triaged in `docs/slither-triage.md`.
+
+**Why:** they have to compile as real contracts, so the exploit runs against real
+bytecode (test-only `.t.sol` files would hide them from Slither and forge-lint
+entirely). They also have to be impossible to mistake for product code.
+
+---
+
+## SEC-D2: Two-day admin delay on both SettlementToken and Escrow
+
+**Status:** Accepted (PR 5, issue #3)
+
+**Decision:** both contracts use OpenZeppelin `AccessControlDefaultAdminRules` with
+`ADMIN_DELAY = 2 days`:
+- `DEFAULT_ADMIN_ROLE` has exactly one holder.
+- It can't be granted, revoked or renounced in a single call.
+- A handover is `beginDefaultAdminTransfer` → wait `> 2 days` →
+  `acceptDefaultAdminTransfer` by the new admin. OZ requires
+  `block.timestamp > schedule`, so accepting at the schedule itself reverts.
+
+**Why:**
+- **Two days** is long enough for monitoring, or another key holder, to notice a
+  hostile or mistaken handover and cancel it. It's short enough for a planned
+  rotation within a working week.
+- **One-call renounce is gone**, which closes issue #3: it used to leave the token
+  with no admin.
+
+**Changed behaviour:** a zero admin in either constructor now reverts with OZ's
+`AccessControlInvalidDefaultAdmin(address(0))`. `SettlementToken.InvalidAdmin` was
+removed, because the base constructor runs first and the old check was unreachable.
+
+**Tests:** `contracts/test/unit/SettlementToken.AdminRules.t.sol`,
+`test_RevertWhen_AdminActsAfterRenouncing`, `test_RevertWhen_DeployedWithZeroAdmin`.
+
+---
+
+## SEC-D3: Signed release design
+
+**Status:** Accepted (PR 5)
+
+**Decision:**
+- **What is signed:** `releaseWithSig(id, deadline, signature)` takes an EIP-712
+  `Release(uint256 id,uint256 nonce,uint256 deadline)` signed by the current arbiter.
+  The domain is name `"Escrow"`, version `"1"`, the chain id, and this contract.
+- **Who submits:** anyone. Funds only ever go to the deal's payee.
+- **Check order:** deadline, then signature, then the deal.
+- **Deadline:** inclusive. A signature works at `deadline` and fails at
+  `deadline + 1` with `SignatureExpired(deadline)`, the same convention as
+  ERC-2612 `permit`.
+- **Nonces:** keyed by arbiter address (OZ `Nonces`) and consumed on every successful
+  signed release. **`setArbiter` also consumes the outgoing arbiter's nonce** (see F-07).
+- **Malleability:** `ECDSA.tryRecover` rejects high-s and malformed signatures, and
+  any recover error maps to `InvalidSignature`.
+
+**Why the nonce, when a deal can only be released once anyway:** the nonce rejects
+a replay *at the signature check*, before the deal is read. So a replayed signature
+fails with `InvalidSignature`, not a state-dependent error, and the protection still
+holds if a future signed action isn't one-shot.
+
+**Tests:** `contracts/test/security/Escrow.signedRelease.t.sol` (SEC-10 to SEC-16).
+
+---
+
+## SEC-D4: The arbiter is a rotatable single address, not a role
+
+**Status:** Accepted (PR 5, issue #7)
+
+**Decision:** the escrow has one `arbiter` address, which the escrow's
+`DEFAULT_ADMIN_ROLE` can change with `setArbiter`. The change emits
+`ArbiterChanged(previous, new)` and rejects the zero address. Rotation takes effect
+in the same block, and deals in flight are untouched.
+
+**Why not an `ARBITER_ROLE`:** a role can have many holders, so several parties
+could release the same deal. Escrow semantics need exactly one arbiter at a time.
+The escrow admin gets no release power of its own: governance and settlement stay
+separate duties, as on the token (TOK-04).
+
+**Tests:** `contracts/test/unit/Escrow.Arbiter.t.sol` (SEC-07 to SEC-09).
+
+---
+
 ## Open
 
 - Freeze and forced transfer for `SettlementToken` are out of scope. The entry is

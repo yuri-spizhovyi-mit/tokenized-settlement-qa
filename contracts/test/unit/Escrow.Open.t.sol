@@ -19,14 +19,23 @@ contract EscrowOpenTest is EscrowBase {
     /// @notice ESC-01: an escrow with no token can never hold funds.
     function test_RevertWhen_DeployedWithZeroToken() public {
         vm.expectRevert(Escrow.ZeroAddress.selector);
-        new Escrow(IERC20(address(0)), arbiter);
+        new Escrow(IERC20(address(0)), arbiter, escrowAdmin);
     }
 
     /// @notice ESC-01: an escrow with no arbiter could never release; every deal
     ///         would end in a refund.
     function test_RevertWhen_DeployedWithZeroArbiter() public {
         vm.expectRevert(Escrow.ZeroAddress.selector);
-        new Escrow(token, address(0));
+        new Escrow(token, address(0), escrowAdmin);
+    }
+
+    /// @notice ESC-01 / SEC-07: an escrow with no admin could never rotate a compromised
+    ///         arbiter. Rejected by the AccessControlDefaultAdminRules constructor.
+    function test_RevertWhen_DeployedWithZeroAdmin() public {
+        vm.expectRevert(
+            abi.encodeWithSignature("AccessControlInvalidDefaultAdmin(address)", address(0))
+        );
+        new Escrow(token, arbiter, address(0));
     }
 
     // ---- open: happy path ------------------------------------------------------
