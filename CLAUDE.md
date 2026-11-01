@@ -15,13 +15,13 @@ The full roadmap, milestones and definition of done are in
 
 ```text
 contracts/          Foundry project
-  src/              SettlementToken, Escrow (from PR 2 on)
-  src/vulnerable/   DELIBERATELY VULNERABLE test fixtures (PR 5). Never deploy, never import from src/
+  src/              SettlementToken, Escrow only: production code
   test/unit/        one behaviour per test
   test/fuzz/        property-based tests
   test/invariant/   handler + ghost-variable invariant suites
   test/fork/        mainnet fork tests (CI only, needs MAINNET_RPC_URL)
   test/security/    exploit + regression tests
+  test/fixtures/    DELIBERATELY VULNERABLE contracts (vault/, PR 5). Never deploy, never import from src/
   lib/              forge-std, openzeppelin-contracts (git submodules, pinned tags)
 services/           Python services
   indexer/          reorg-aware indexer (PR 7): db (schema, Uint256), indexer, queries, CLI

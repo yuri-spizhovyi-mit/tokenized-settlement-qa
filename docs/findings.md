@@ -260,7 +260,8 @@ governance is given up. The one-call renounce is tested on its own in
 
 ## F-09: re-entrancy drain (planted, book Ch 9.1)
 
-**Source:** `contracts/src/vulnerable/Vault.sol`, deliberately vulnerable (SEC-D1).
+**Source:** `contracts/test/fixtures/vault/Vault.sol` (was `src/vulnerable/` until
+issue #10), deliberately vulnerable (SEC-D1).
 
 **Exploit** (`test_Exploit_ReentrancyDrainsVulnerableVault`):
 1. Five depositors put in 2 ETH each.
@@ -307,7 +308,7 @@ with both versions:
 | Detectors | 100 | 102 |
 | Gated results | 7 | 5 |
 | `--fail-high` exit (gate) | 0 | 0 |
-| Exit with `src/vulnerable/` in scope | 255 | 255 |
+| Exit with the vault fixtures in scope (then in `src/vulnerable/`) | 255 | 255 |
 
 The two extra 0.11.4 results are informational notes on OpenZeppelin's inherited
 `Pausable` events (triage #12 and #13). The gate verdict is the same on both.

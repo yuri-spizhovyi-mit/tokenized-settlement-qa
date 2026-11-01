@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {VaultBase} from "../../src/vulnerable/Vault.sol";
+import {VaultBase} from "../fixtures/vault/Vault.sol";
 
 /// @notice Test-only attacker for the re-entrancy exploit (book Ch 9.1). It deposits a
 ///         stake, withdraws it, and re-enters `withdraw` from `receive` while the vault
