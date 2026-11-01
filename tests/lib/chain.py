@@ -134,6 +134,43 @@ class Chain:
             raise RuntimeError(f"{method} failed: {response['error']}")
         return response["result"]
 
+    # ---- block control ---------------------------------------------------------------
+
+    def send_in_one_block(
+        self, calls: list[tuple[ContractFunction, LocalAccount]], gas: int = 500_000
+    ) -> list[TxReceipt]:
+        """Send several calls and mine them together in one block, in list order, and
+        require every one to succeed.
+
+        Automine is off while they queue, so each send uses an explicit gas limit:
+        estimation would run against `latest`, without the earlier calls of the same
+        block (an `open` would fail estimation before its `approve` is mined)."""
+        self._rpc("evm_setAutomine", False)
+        try:
+            hashes = [fn.transact({"from": sender.address, "gas": gas}) for fn, sender in calls]
+            self._rpc("evm_mine")
+        finally:
+            self._rpc("evm_setAutomine", True)
+        receipts = [self._wait(h) for h in hashes]
+        for receipt in receipts:
+            if receipt["status"] != 1:
+                raise ReceiptFailed(receipt)
+        assert len({r["blockNumber"] for r in receipts}) == 1, "calls were split across blocks"
+        return receipts
+
+    def mine(self, blocks: int = 1) -> None:
+        for _ in range(blocks):
+            self._rpc("evm_mine")
+
+    def anvil_reorg(self, depth: int, txs: list[tuple[dict[str, Any], int]] = ()) -> None:
+        """Replace the last `depth` blocks with new ones at the same heights. `txs` are
+        (transaction request, block offset within the new blocks) pairs. The chain's
+        height does not change."""
+        self._rpc("anvil_reorg", depth, [[tx, offset] for tx, offset in txs])
+
+    def block_hash(self, number: int) -> str:
+        return self.w3.eth.get_block(number)["hash"].to_0x_hex()
+
     # ---- helpers ---------------------------------------------------------------------
 
     def eth_balance(self, address: str) -> int:

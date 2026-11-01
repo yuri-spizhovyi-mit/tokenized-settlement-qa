@@ -20,6 +20,10 @@ sequence or test output) and the outcome.
 | F-12 | Anvil probe while building INT-08 | `evm_increaseTime` can't hit an exact second | pin boundaries with `evm_setNextBlockTimestamp` / `evm_mine(ts)` |
 | F-13 | Anvil probe while building the harness | a receipt fetched right after sending may not exist yet | always `wait_for_transaction_receipt` |
 | F-14 | first run of INT-08 | `eth_estimateGas` ignores the pinned timestamp; a boundary test passed for the wrong reason | `call_at` / `send_at` helpers; the test asserts the block time |
+| F-15 | reorg tests IDX-01..03, REC-06 | a naive indexer keeps an abandoned block's events and misses the replacement's | parent-hash check + rollback to the common ancestor; naive run is a strict xfail |
+| F-16 | precision probe for IDX-07 | SQLite NUMERIC silently turns integers above 2^63 into REALs | `Uint256` column type: NUMERIC(78,0) on Postgres, TEXT on SQLite |
+| F-17 | Anvil probe for the reconciliation pin | Anvil's `finalized` and `safe` tags are block 0 | pin = `latest - confirmations`, read by block hash |
+| F-18 | IDX-02, with the tip check disabled | the parent-hash check alone misses a same-height reorg (`anvil_reorg`) | tip check when no new block is due |
 
 No real defect in `SettlementToken` or `Escrow` was found by the fuzz, invariant or
 fork suites in PR 4. All 7 USDC fork tests passed on their first execution in CI.
@@ -390,3 +394,107 @@ is a failing test", but with the right error name and argument and the wrong
   `t`.
 
 Both boundary tests now prove the second they claim.
+
+## F-15: a naive indexer keeps the abandoned block after a reorg (book Ch 3)
+
+**Found by:** `tests/indexing/test_reorg.py` (IDX-01, IDX-02 run against both
+implementations; IDX-03 pins the wrong state) and `tests/reconciliation` (REC-06).
+
+**Setup (IDX-01):** fund the payer with 1,000 USDC, index. `evm_snapshot`. Block H:
+payer → payee 100. Index it. `evm_revert`. Block H' at the same height: payer →
+stranger 7. Mine H+1 on top of H'. Sync again.
+
+**`NaiveIndexer`** (`tests/lib/naive_indexer.py`) is the real indexer with
+`check_parent = False`. It resumes at H+1, the next number after its tip, and never
+looks at height H again:
+
+```
+result:          processed=1, reorgs=0, rolled_back=0
+stored hash[H]:  0x1594...5530   (the abandoned block; chain has 0x28c1...2a14)
+balances:        payer 900, payee 100       (chain: payer 993, stranger 7)
+```
+
+The database describes a fork that no longer exists. The payee's 100 USDC was
+never paid, and the stranger's 7 doesn't exist for the indexer. Nothing errors.
+
+**The nastier half (REC-06):** the naive database has the *right* hash for H+1,
+because it stored H+1 without checking its parent. A reconciliation that only
+compares the pinned block's hash passes. Only the per-holder balances show it:
+
+```
+balance[payer]:    chain=993000000 db=900000000
+balance[payee]:    chain=0         db=100000000
+balance[stranger]: chain=7000000   db=0
+```
+
+`totalSupply` still reconciles (1,000 either way), so a supply-only check passes too.
+
+**Fix:** before storing block N, `Indexer` compares its `parentHash` with the stored
+hash of N-1. On a mismatch it walks back to the newest height where the stored hash
+equals the chain's (the common ancestor), deletes every block above it and its
+events in one transaction, and re-indexes. Result after the same sequence:
+`processed=2, reorgs=1, rolled_back=1`, balances payer 993 and stranger 7.
+
+**How the suite keeps it proven:** the naive runs are `xfail(strict=True,
+raises=AssertionError)`. If the naive indexer ever *passed*, the test could no longer
+see a reorg, and the strict xfail turns CI red. IDX-03 asserts the exact wrong state,
+so the xfail can't be passing for an unrelated reason. Its data assertions run
+before the counters, so the failure is about what was stored.
+
+## F-16: SQLite NUMERIC silently loses integers above 2^63
+
+**Found by:** probing the storage type before writing IDX-07. Now pinned by
+`test_sqlite_numeric_column_silently_loses_precision_above_2_pow_63`.
+
+```
+value inserted        stored as     read back                        exact?
+2^53 + 1              integer       9007199254740993                 yes
+2^63 + 1              real          9.223372036854776e+18            no
+10^30 + 1             real          1e+30                            no
+```
+
+SQLite's NUMERIC affinity keeps a value as INTEGER only if it fits in 64 bits.
+Anything bigger becomes an 8-byte float, with no error and no warning. Through
+SQLAlchemy's `Numeric(78, 0)`, `2^63 + 1` comes back as `2^63`: off by one unit, the
+kind of error a reconciliation catches only if it compares exactly. Token amounts
+with 18 decimals pass 2^63 at about 9.2 tokens.
+
+2^53 + 1 survives SQLite but not a float (JSON numbers in JavaScript, pandas,
+`float()`), so IDX-07 tests both boundaries, plus 10^30 + 7 and 2^256 - 1.
+
+**Fix:** `indexer.db.Uint256`: NUMERIC(78, 0) on Postgres and TEXT on SQLite, `int` in
+Python. It refuses floats, bools, strings, negatives and values ≥ 2^256 at bind
+time. All sums run in Python ints (`indexer.queries`), never in SQL, so SQLite and
+Postgres give identical answers.
+
+## F-17: Anvil's `finalized` tag is block 0
+
+**Found by:** probing Anvil while choosing the reconciliation pin.
+`eth_getBlockByNumber("finalized")` and `("safe")` both returned block 0 at height 3.
+A dev chain has no consensus layer and so nothing finalises. Reconciling "at
+finalized" there would compare the genesis block, and pass trivially.
+
+**Fix:** the pin is the indexer's confirmed tip, `latest - confirmations` (2 in the
+reconciliation suite). Every chain read is an `eth_call` pinned to that block's
+**hash**, so the chain side can't silently move to another fork while we compare.
+On a real network the pin would be the `finalized` block (IDX-D2).
+
+## F-18: the parent-hash check alone misses a same-height reorg
+
+**Found by:** IDX-02, run against a variant of `Indexer` with the tip check disabled
+(a temporary local edit, not committed). Both parametrisations failed:
+
+```
+stored blocks {11: 0x0034..., 12: 0xd19b..., 13: 0xa268...}
+chain blocks  {11: 0x0dac..., 12: 0xf37f..., 13: 0x4f1e...}
+```
+
+`anvil_reorg(3, ...)` replaces the last 3 blocks without changing the height. There
+is no new block, so there is no `parentHash` to compare, and a parent-check-only
+indexer reports "up to date" over three blocks that no longer exist. It would only
+notice when the next block arrives, and on a quiet chain that can be a long time.
+The same happens when `evm_revert` makes the chain *shorter* than the stored tip.
+
+**Fix:** when there is no new block to process, `sync()` checks that the stored tip
+is still the chain's block at that height (or exists at all). If not, it rolls back
+the same way. With the check restored, IDX-02 passes at 0 and 1 confirmations.

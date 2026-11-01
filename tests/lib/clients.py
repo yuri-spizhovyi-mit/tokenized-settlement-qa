@@ -107,6 +107,10 @@ class TokenClient:
         receipt = self.chain.send(self.contract.functions.mint(to, amount), minter)
         return _one(self.contract, receipt, "Transfer")
 
+    def burn(self, minter: LocalAccount, amount: int) -> Event:
+        receipt = self.chain.send(self.contract.functions.burn(amount), minter)
+        return _one(self.contract, receipt, "Transfer")
+
     def approve(self, owner: LocalAccount, spender: str, amount: int) -> Event:
         receipt = self.chain.send(self.contract.functions.approve(spender, amount), owner)
         return _one(self.contract, receipt, "Approval")

@@ -6,3 +6,9 @@ eth-abi==6.0.0
 pytest==9.2.0
 pytest-timeout==2.4.0
 allure-pytest==2.16.2
+# Indexer (PR 7): SQLAlchemy over SQLite (sessions) or Postgres (CI, psycopg 3).
+# hexbytes and eth-utils come with web3 but the indexer imports them directly.
+sqlalchemy==2.1.6
+psycopg[binary]==3.3.6
+hexbytes==2.0.0
+eth-utils==6.0.0
