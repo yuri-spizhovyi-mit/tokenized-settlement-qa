@@ -1,0 +1,99 @@
+name: integration
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Keep this job name stable: it is meant to be a required status check.
+  integration:
+    name: integration (pytest + anvil)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          # Keep in step with FOUNDRY_VERSION in scripts/cloud-setup.sh.
+          version: v1.8.7
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      # The harness deploys from contracts/out/, so build first: no hand-copied ABIs.
+      - name: Build contracts
+        working-directory: contracts
+        run: forge build
+
+      - name: Integration tests (Anvil started by the session fixture)
+        run: pytest --alluredir=allure-results
+
+      - name: Upload Allure results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results
+          path: allure-results
+          retention-days: 14
+
+  # Publishes the Allure report to GitHub Pages, on main only. Requires the repo's
+  # Pages source to be set to "GitHub Actions" (Settings -> Pages).
+  allure-report:
+    name: allure report (GitHub Pages)
+    needs: integration
+    if: >-
+      always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+      && needs.integration.result != 'cancelled'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: allure-results
+          path: allure-results
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Generate Allure report
+        run: npx --yes allure-commandline@2.46.1 generate allure-results -o allure-report --clean
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: allure-report
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
