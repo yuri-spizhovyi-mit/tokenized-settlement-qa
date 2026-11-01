@@ -1,0 +1,123 @@
+{
+  "profile": "nightly",
+  "config": {
+    "users": 40,
+    "spawn_rate": 5,
+    "seconds": 180,
+    "accounts": 40
+  },
+  "results": {
+    "load_seconds": 182.0,
+    "drain_seconds": 120.1,
+    "drained": false,
+    "transfers_by_status": {
+      "accepted": 51,
+      "confirmed": 830,
+      "mined": 5,
+      "submitted": 5153
+    },
+    "api_confirmed_amount": "406191229",
+    "hot_wallet_spent_on_chain": "2968868010",
+    "api_amount_matches_chain": false,
+    "worker": {
+      "ticks": 18,
+      "errors": 0,
+      "busy_s": 179.0
+    },
+    "indexer": {
+      "syncs": 800,
+      "errors": 0,
+      "busy_s": 100.1
+    },
+    "gap_fills": 0,
+    "final_block": 391,
+    "indexed_events": 15221,
+    "reconciled_at_block": 390,
+    "reconciliation_mismatches": [],
+    "db": "sqlite"
+  },
+  "requests": [
+    {
+      "type": "GET",
+      "name": "GET /health",
+      "count": 2,
+      "failures": 0,
+      "rps": 0.0,
+      "p50_ms": 46.0,
+      "p95_ms": 46.0,
+      "p99_ms": 46.0
+    },
+    {
+      "type": "GET",
+      "name": "GET /transfers/{id}",
+      "count": 11552,
+      "failures": 0,
+      "rps": 64.5,
+      "p50_ms": 43.0,
+      "p95_ms": 130.0,
+      "p99_ms": 190.0
+    },
+    {
+      "type": "POST",
+      "name": "POST /transfers",
+      "count": 6002,
+      "failures": 0,
+      "rps": 33.5,
+      "p50_ms": 160.0,
+      "p95_ms": 650.0,
+      "p99_ms": 1200.0
+    },
+    {
+      "type": "rpc",
+      "name": "eth_call balanceOf",
+      "count": 8742,
+      "failures": 0,
+      "rps": 48.8,
+      "p50_ms": 23.0,
+      "p95_ms": 82.0,
+      "p99_ms": 110.0
+    },
+    {
+      "type": "rpc",
+      "name": "eth_sendRawTransaction",
+      "count": 9174,
+      "failures": 0,
+      "rps": 51.2,
+      "p50_ms": 13.0,
+      "p95_ms": 43.0,
+      "p99_ms": 64.0
+    }
+  ],
+  "throughput": {
+    "api_transfers_created": 6039,
+    "api_refused_503": 0,
+    "api_accepted_per_s": 33.5,
+    "api_confirmed_per_s_during_load": 4.0,
+    "direct_rpc_sends_per_s": 51.0,
+    "worker_busy_fraction": 0.59
+  },
+  "backlog": {
+    "max": 5278,
+    "end_of_load": 5245
+  },
+  "indexer_lag_blocks": {
+    "p50": 0,
+    "p95": 1,
+    "max": 2
+  },
+  "balances_query_ms": {
+    "first": 0.68,
+    "last": 161.52,
+    "median": 84.00999999999999
+  },
+  "confirmed_total": 830,
+  "checks": {
+    "all_transfers_final": false,
+    "api_total_matches_chain": false,
+    "indexer_reconciles": true,
+    "no_worker_errors": true,
+    "no_indexer_errors": true,
+    "no_request_failures": true
+  },
+  "passed": false
+}
