@@ -18,6 +18,24 @@ jobs:
     name: integration (pytest + anvil)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # The indexer and reconciliation suites write to Postgres here (SQLite in sessions).
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: indexer
+          POSTGRES_PASSWORD: indexer
+          POSTGRES_DB: indexer
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U indexer"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # A throwaway CI-only database: these credentials exist only in this container.
+      INDEXER_DATABASE_URL: postgresql+psycopg://indexer:indexer@localhost:5432/indexer
     steps:
       - uses: actions/checkout@v5
         with:
@@ -42,7 +60,8 @@ jobs:
         working-directory: contracts
         run: forge build
 
-      - name: Integration tests (Anvil started by the session fixture)
+      # tests/integration, tests/indexing and tests/reconciliation (pytest.ini testpaths).
+      - name: Integration, indexer and reconciliation tests (Anvil + Postgres)
         run: pytest --alluredir=allure-results
 
       - name: Upload Allure results
