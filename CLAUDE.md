@@ -23,10 +23,14 @@ contracts/          Foundry project
   test/fork/        mainnet fork tests (CI only, needs MAINNET_RPC_URL)
   test/security/    exploit + regression tests
   lib/              forge-std, openzeppelin-contracts (git submodules, pinned tags)
-services/           indexer/, transfer-api/ (Python)
-tests/              Python (3.12) suites against Anvil: integration/ (PR 6); reconciliation/, ui/, load/ later
-  conftest.py       session Anvil + deployment, per-test evm_snapshot/evm_revert
-  lib/              anvil, artifacts, chain, errors, clients (Token/Escrow), builders, eip712, nonces
+services/           Python services
+  indexer/          reorg-aware indexer (PR 7): db (schema, Uint256), indexer, queries, CLI
+  transfer-api/     PR 8
+tests/              Python (3.12) suites against Anvil: integration/ (PR 6), indexing/ and
+                    reconciliation/ (PR 7); ui/, load/ later
+  conftest.py       session Anvil + deployment, per-test evm_snapshot/evm_revert, indexer DB
+  lib/              anvil, artifacts, chain, errors, clients (Token/Escrow), builders, eip712,
+                    nonces, activity, indexing, reconcile, naive_indexer (DELIBERATELY BROKEN)
 requirements.txt    exact-pinned Python deps (web3 7.16.0); pytest.ini at the repo root
 docs/               plan.md, decisions.md, findings.md, slither-triage.md, test strategy, RTM, reports
 scripts/            cloud-setup.sh
@@ -91,7 +95,9 @@ slither . --ignore-compile --config-file slither.config.json --fail-high
 - After an intended gas change, regenerate with
   `forge snapshot --match-path 'test/unit/*'` (fuzz, invariant and fork gas can't be
   pinned; see PROP-D2 in `docs/decisions.md`).
-- The indexer uses SQLite in sessions and Postgres in CI.
+- The indexer uses SQLite in sessions and Postgres in CI (`INDEXER_DATABASE_URL`).
+  Amounts are `Uint256` columns and are summed in Python ints, never floats and never SQL
+  `SUM` (F-16, IDX-D3).
 
 ## Test conventions
 
@@ -142,7 +148,11 @@ slither . --ignore-compile --config-file slither.config.json --fail-high
   is coarse only (F-12).
 - **Wait for receipts** (`wait_for_transaction_receipt`); never fetch them right after
   sending (F-13).
-- **Every test has `@pytest.mark.req("INT-xx")`** (module-level `pytestmark` is fine).
+- **Indexer tests compare against the node**, not against a hand-written list:
+  `chain_event_keys` (one `eth_getLogs`) is the reference. Reorg tests run against
+  `Indexer` and `NaiveIndexer`; the naive run is `xfail(strict=True)` (F-15).
+- **Reconcile at a pinned block hash**, never at `latest` (IDX-D2).
+- **Every test has `@pytest.mark.req("INT-xx")`** (or `IDX-xx`, `REC-xx`) (module-level `pytestmark` is fine).
   It becomes an Allure `requirement` label for the RTM.
 - **Concurrency tests assert on chain state** (balances, nonces), not only on
   exceptions, since a node can drop a transaction without an error (F-11).

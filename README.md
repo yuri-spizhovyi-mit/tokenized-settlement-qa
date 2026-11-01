@@ -46,8 +46,23 @@ You need Python **3.12**, plus Foundry v1.8.7 (which provides `anvil`) on your `
 python3.12 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 (cd contracts && forge build)
-.venv/bin/pytest                      # all integration tests, about 20 s
+.venv/bin/pytest                      # integration + indexer + reconciliation, about 50 s
+.venv/bin/pytest tests/integration    # one suite
 .venv/bin/pytest -k signed_release    # one group
+```
+
+The indexer and reconciliation suites (`tests/indexing/`, `tests/reconciliation/`)
+use a fresh SQLite file per test by default. To run them against Postgres, as CI does:
+
+```bash
+INDEXER_DATABASE_URL=postgresql+psycopg://USER:PASSWORD@localhost:5432/indexer .venv/bin/pytest
+```
+
+The indexer itself (`services/indexer/`) also runs on its own against any node:
+
+```bash
+PYTHONPATH=services .venv/bin/python -m indexer --rpc http://127.0.0.1:8545 \
+  --token 0x... --escrow 0x... --db sqlite:///indexer.db --confirmations 2
 ```
 
 For the Allure report locally (needs Java 17+ and Node):
@@ -57,8 +72,8 @@ For the Allure report locally (needs Java 17+ and Node):
 npx allure-commandline@2.46.1 serve allure-results
 ```
 
-CI runs the same suite in `.github/workflows/integration.yml` (job
-`integration (pytest + anvil)`) and publishes the report to GitHub Pages from `main`.
+CI runs all three suites in `.github/workflows/integration.yml` (job
+`integration (pytest + anvil)`, with a Postgres 16 service container) and publishes the report to GitHub Pages from `main`.
 
 ## Cloud sessions
 

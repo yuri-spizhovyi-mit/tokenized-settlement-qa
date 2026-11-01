@@ -380,6 +380,111 @@ pins keep CI and local runs on identical versions, the same reasoning as Foundry
 
 ---
 
+## IDX-D1: Reorg detection uses the parent hash *and* a tip check
+
+**Status:** Accepted (PR 7)
+
+**Decision:** before storing block N, the indexer requires `parentHash(N)` to equal
+the stored hash of N-1. When no new block is due, it requires the stored tip to be
+the chain's block at that height. On either mismatch it walks back to the common
+ancestor, deletes everything above it in one transaction, and re-indexes. If even
+`start_block` is no longer canonical it raises `ReorgTooDeep` and stores nothing.
+
+**Why:** the parent check is the standard mechanism, but it needs a new block to
+compare against. A same-height or shortening reorg has none (F-18). Raising on a
+reorg below `start_block` is deliberate: the indexer can't know the state before its
+first block, and rebuilding from a guess would be worse than stopping.
+
+**Tests:** IDX-01 (parent check), IDX-02 (tip check, at 0 and 1 confirmations),
+IDX-03 (the naive failure), IDX-09 (`ReorgTooDeep`).
+
+---
+
+## IDX-D2: Confirmation depth, and the reconciliation pin
+
+**Status:** Accepted (PR 7)
+
+**Decision:** the indexer only processes blocks up to `latest - confirmations`. The
+CLI defaults to 2; tests set it explicitly (0 unless the test is about depth). The
+reconciliation suite pins its comparison to the indexer's confirmed tip and reads
+the chain by that block's **hash** (EIP-1898).
+
+**Why:** a reorg shallower than the depth never reaches the database (IDX-08). On
+Anvil `finalized` is block 0 (F-17), so it can't be the pin there. On a real network
+the pin should be the `finalized` block and the depth should cover the network's
+practical reorg depth. Reading by hash means the chain side and the database side
+describe the same block, even while new blocks arrive (REC-04).
+
+**Tests:** IDX-08, REC-01..REC-04.
+
+---
+
+## IDX-D3: Amounts are exact integers: NUMERIC(78,0) on Postgres, TEXT on SQLite
+
+**Status:** Accepted (PR 7)
+
+**Decision:** every amount column (`value`, `amount`, `deal_id`, `deadline`) uses
+`indexer.db.Uint256`. It is NUMERIC(78, 0) on Postgres (78 digits hold any uint256)
+and TEXT on SQLite, and always a Python `int`. Sums are computed in Python from those
+ints, not with SQL `SUM`.
+
+**Why:** SQLite NUMERIC loses precision above 2^63 without an error (F-16). TEXT can't
+be summed in SQL, so the sums move to Python. They then behave identically on both
+databases, and the reconciliation compares like with like.
+
+**Tests:** IDX-07 (2^53+1, 2^63+1, 10^30+7, 2^256-1, uint128 max, the negative control,
+and bind-time rejection of non-integers).
+
+---
+
+## IDX-D4: Balances and deal states are derived from events on read, not stored
+
+**Status:** Accepted (PR 7)
+
+**Decision:** the database stores blocks and raw events only. `indexer.queries`
+replays events in `(block_number, log_index)` order to compute balances, supply and
+deal states, as of any block.
+
+**Why:** a rollback is then only "delete rows above the ancestor". With materialised
+balance tables, every rollback would also have to reverse-apply the abandoned
+events, which is a second place to get wrong. Replaying is O(events) per read. That's
+fine at this scale; the load milestone (PR 9) measures it and can add a cached
+projection that rebuilds from the ancestor.
+
+**Tests:** IDX-06 (replay order), REC-01..REC-03.
+
+---
+
+## IDX-D5: One database transaction per block; logs fetched by block hash
+
+**Status:** Accepted (PR 7)
+
+**Decision:** a block row and all its events are written in one transaction, and the
+logs are requested with `eth_getLogs({"blockHash": ...})` (EIP-234), not by number.
+
+**Why:** a crash then leaves a whole block or none of it, so a restart resumes at
+`tip + 1` with nothing to repair (IDX-05). Fetching by hash means a block replaced
+between `get_block` and `get_logs` makes the node answer "unknown block" (checked on
+Anvil), instead of returning the new block's logs under the old block's hash.
+
+**Tests:** IDX-04, IDX-05.
+
+---
+
+## IDX-D6: The naive indexer is a test fixture in `tests/lib/`
+
+**Status:** Accepted (PR 7)
+
+**Decision:** `NaiveIndexer` lives in `tests/lib/naive_indexer.py`, not in
+`services/indexer/`. It subclasses the real indexer and flips one flag.
+
+**Why:** deliberately broken code belongs with the tests that use it, not with code
+that could be deployed. This is the same rule issue #10 applies to `src/vulnerable/`.
+Being a one-flag subclass, it can't drift from the real indexer in any other way, so
+the reorg tests compare exactly one behaviour.
+
+---
+
 ## Open
 
 - None. Issue #4 is recorded above as TOK-D1.
