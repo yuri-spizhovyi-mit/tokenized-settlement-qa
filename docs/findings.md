@@ -24,6 +24,10 @@ sequence or test output) and the outcome.
 | F-16 | precision probe for IDX-07 | SQLite NUMERIC silently turns integers above 2^63 into REALs | `Uint256` column type: NUMERIC(78,0) on Postgres, TEXT on SQLite |
 | F-17 | Anvil probe for the reconciliation pin | Anvil's `finalized` and `safe` tags are block 0 | pin = `latest - confirmations`, read by block hash |
 | F-18 | IDX-02, with the tip check disabled | the parent-hash check alone misses a same-height reorg (`anvil_reorg`) | tip check when no new block is due |
+| F-19 | TAPI-13 (issue #12) | a nonce manager that never re-syncs stalls every transaction after one refused send | `NonceManager.resync()` after any refusal; gap filler as a safety net |
+| F-20 | Anvil probe for TAPI-09 | Anvil refuses underpriced sends and silently *drops* pool transactions a fee spike made underpriced | stuck = "no receipt for N blocks", whatever the cause; re-sign the same nonce |
+| F-21 | TAPI-11 | re-signing a transfer after a crash pays the recipient twice | write-ahead attempts; a restart rebroadcasts the stored bytes |
+| F-22 | first transfer-API run on Postgres | `time.time_ns()` in an `Integer` column: fine on SQLite, "integer out of range" on Postgres | `BigInteger`; CI keeps running Postgres |
 
 No real defect in `SettlementToken` or `Escrow` was found by the fuzz, invariant or
 fork suites in PR 4. All 7 USDC fork tests passed on their first execution in CI.
@@ -498,3 +502,99 @@ The same happens when `evm_revert` makes the chain *shorter* than the stored tip
 **Fix:** when there is no new block to process, `sync()` checks that the stored tip
 is still the chain's block at that height (or exists at all). If not, it rolls back
 the same way. With the check restored, IDX-02 passes at 0 and 1 confirmations.
+
+## F-19: a nonce manager that never re-syncs stalls after one refused send (issue #12)
+
+**Found by:** `tests/transfers/test_nonce_gaps.py`, TAPI-13. The `CountingNonceManager`
+run is a strict xfail.
+
+**Setup:** the send that gets nonce *k* is refused by the node (gas below intrinsic:
+`intrinsic gas too low`). Three transfers of 1, 2 and 3 units follow.
+
+**Counting manager** (PR 6's `LocalNonceManager`: seed once, count up, never look
+back): the three get *k+1..k+3*. The node accepts all three, without an error, into
+its *queued* set, because nonce *k* never arrives. One block later:
+
+```
+payee balance: 0 (expected 6)    wallet nonce: k (expected k+3)
+eth_getTransactionCount(pending) == k     the three transactions: no receipt, ever
+```
+
+The service would report three successful sends. Nothing would ever settle, and
+every later transfer would join the queue.
+
+**Fix** (`services/transfer_api/nonces.py`): after any refusal, `resync()` resets the
+counter to the node's `pending` count. That count excludes queued transactions, so
+it points at the hole, and the next send fills it. After the refusal the three get
+*k..k+2* and all are mined (TAPI-13, real manager). The same re-sync recovers "nonce
+too low" after someone used the key elsewhere (TAPI-14). Inside the worker, the next
+transfer in the same tick takes the refused nonce, so no gap ever forms (TAPI-15).
+
+**Safety net:** a nonce can also be lost with *no* error at all (handed out, then the
+process dies). The worker's gap filler finds an outstanding nonce above the chain's
+with nothing executable pending, and fills each hole with a 0-value self-transfer
+(TAPI-16). TAPI-15 runs both managers. With re-sync, 0 fillers are needed. Without
+it, the filler rescues the transfer at the cost of 1 extra transaction.
+
+## F-20: Anvil drops a pending transaction that a fee spike made underpriced
+
+**Found by:** probing Anvil before writing the stuck-transaction test (TAPI-09).
+
+- A send whose `maxFeePerGas` is below the next block's base fee is **refused**:
+  `max fee per gas less than block base fee`. Geth would accept it and keep it pending.
+- A transaction already in the pool (automine off), sent at 3 gwei, is **evicted**
+  when `anvil_setNextBlockBaseFeePerGas(100 gwei)` and a block are mined. `txpool_content`
+  is empty, `eth_getTransactionByHash` says not found, and the nonce is unused. No
+  error reaches the sender.
+
+So "stuck" can't mean "still pending at a low fee" on every node. On Anvil it means
+"gone". A tracker that waits for a receipt, or one that only bumps fees on
+transactions it can still see, waits forever.
+
+**Fix:** the worker defines stuck as **no receipt for `stuck_after_blocks`**, whatever
+the reason. It re-signs the same nonce at `max(1.25 x old fee, 2 x base fee + tip)`,
+which replaces a pending one (geth) and re-sends a dropped one (Anvil). It checks
+receipts for *every* attempt, so whichever one is mined counts. TAPI-09 asserts the
+drop, the replacement, one payment and one nonce.
+
+## F-21: re-signing after a crash pays the recipient twice
+
+**Found by:** `tests/transfers/test_api_restart.py`, TAPI-11. The `NaiveRestartService`
+run is a strict xfail, and `test_naive_restart_re_signs_and_pays_twice` pins the
+wrong state.
+
+**Setup:** the worker broadcasts a 12 USDC transfer and dies before recording that it
+did. The transaction is mined. The database still says `signed`.
+
+**Naive restart:** "it never got sent, sign it again". The new signature takes the
+next nonce, so it is a different, equally valid transaction:
+
+```
+payee balance: 24 USDC (requested 12)    wallet nonce: +2    status: confirmed
+```
+
+Everything looks healthy: both transactions succeeded, and the transfer is
+confirmed. Only the recipient's balance shows the double payment.
+
+**Fix:** write-ahead. The signed raw transaction is stored in `attempts` *before*
+broadcast. A restart rebroadcasts **those bytes**, so it can only ever be the same
+transaction. If it was already mined, the node answers `nonce too low`, the worker
+finds a receipt for the stored hash, and it marks the transfer submitted. TAPI-10 covers
+the other crash window (stored but never sent): the restart sends the stored bytes,
+the same hash, once.
+
+## F-22: `Integer` holds `time.time_ns()` on SQLite but not on Postgres
+
+**Found by:** the first run of the transfer API suites against Postgres. Every test
+that accepted a transfer got HTTP 500, from `psycopg.errors.NumericValueOutOfRange:
+integer out of range`. On SQLite all 29 had passed.
+
+`transfers.created_seq` (FIFO order for the worker) stored `time.time_ns()`, about
+1.8 x 10^18, in an `Integer` column. SQLite stores any integer up to 64 bits whatever
+the declared type. Postgres `INTEGER` is 32-bit. **Fix:** `BigInteger`. This is the
+case for running CI on the production database engine, not only the convenient one
+(the plan's "SQLite in sessions, Postgres in CI").
+
+The transfer API also met F-13 again: right after a broadcast, Anvil may not have
+the receipt yet, so the same `tick()` can't always see it mined. The worker doesn't
+wait; the next tick does. Tests use `wait_for_attempts`, which waits on the node.

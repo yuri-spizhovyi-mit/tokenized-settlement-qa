@@ -25,12 +25,13 @@ contracts/          Foundry project
   lib/              forge-std, openzeppelin-contracts (git submodules, pinned tags)
 services/           Python services
   indexer/          reorg-aware indexer (PR 7): db (schema, Uint256), indexer, queries, CLI
-  transfer-api/     PR 8
+  transfer_api/     transfer API (PR 8): FastAPI app, service (worker tick), nonces, db, CLI
 tests/              Python (3.12) suites against Anvil: integration/ (PR 6), indexing/ and
-                    reconciliation/ (PR 7); ui/, load/ later
+                    reconciliation/ (PR 7), transfers/ (PR 8); ui/, load/ later
   conftest.py       session Anvil + deployment, per-test evm_snapshot/evm_revert, indexer DB
   lib/              anvil, artifacts, chain, errors, clients (Token/Escrow), builders, eip712,
-                    nonces, activity, indexing, reconcile, naive_indexer (DELIBERATELY BROKEN)
+                    nonces, activity, indexing, reconcile, transfers, api_server,
+                    naive_indexer and naive_transfer (DELIBERATELY BROKEN)
 requirements.txt    exact-pinned Python deps (web3 7.16.0); pytest.ini at the repo root
 docs/               plan.md, decisions.md, findings.md, slither-triage.md, test strategy, RTM, reports
 scripts/            cloud-setup.sh
@@ -152,7 +153,12 @@ slither . --ignore-compile --config-file slither.config.json --fail-high
   `chain_event_keys` (one `eth_getLogs`) is the reference. Reorg tests run against
   `Indexer` and `NaiveIndexer`; the naive run is `xfail(strict=True)` (F-15).
 - **Reconcile at a pinned block hash**, never at `latest` (IDX-D2).
-- **Every test has `@pytest.mark.req("INT-xx")`** (or `IDX-xx`, `REC-xx`) (module-level `pytestmark` is fine).
+- **Transfer API tests drive the worker by hand:** the app runs on a real port with no
+  background worker; tests call `service.tick()` and `wait_for_attempts()` (F-13), so
+  every status change happens when the test says. Crashes are simulated with the
+  `_after_write_ahead` / `_after_broadcast` hooks. Test module basenames must be unique
+  across `tests/` (pytest's default import mode).
+- **Every test has `@pytest.mark.req("INT-xx")`** (or `IDX-xx`, `REC-xx`, `TAPI-xx`) (module-level `pytestmark` is fine).
   It becomes an Allure `requirement` label for the RTM.
 - **Concurrency tests assert on chain state** (balances, nonces), not only on
   exceptions, since a node can drop a transaction without an error (F-11).

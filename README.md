@@ -46,7 +46,7 @@ You need Python **3.12**, plus Foundry v1.8.7 (which provides `anvil`) on your `
 python3.12 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 (cd contracts && forge build)
-.venv/bin/pytest                      # integration + indexer + reconciliation, about 50 s
+.venv/bin/pytest                      # integration, indexer, reconciliation, transfer API: ~80 s
 .venv/bin/pytest tests/integration    # one suite
 .venv/bin/pytest -k signed_release    # one group
 ```
@@ -56,6 +56,15 @@ use a fresh SQLite file per test by default. To run them against Postgres, as CI
 
 ```bash
 INDEXER_DATABASE_URL=postgresql+psycopg://USER:PASSWORD@localhost:5432/indexer .venv/bin/pytest
+```
+
+The transfer API (`services/transfer_api/`) serves `POST /transfers` (with an
+`Idempotency-Key` header) and `GET /transfers/{id}`. The hot wallet's key comes from an
+environment variable, never a flag:
+
+```bash
+TRANSFER_API_PRIVATE_KEY=0x... PYTHONPATH=services .venv/bin/python -m transfer_api \
+  --rpc http://127.0.0.1:8545 --token 0x... --db sqlite:///transfer-api.db
 ```
 
 The indexer itself (`services/indexer/`) also runs on its own against any node:
@@ -72,7 +81,7 @@ For the Allure report locally (needs Java 17+ and Node):
 npx allure-commandline@2.46.1 serve allure-results
 ```
 
-CI runs all three suites in `.github/workflows/integration.yml` (job
+CI runs all four suites in `.github/workflows/integration.yml` (job
 `integration (pytest + anvil)`, with a Postgres 16 service container) and publishes the report to GitHub Pages from `main`.
 
 ## Cloud sessions
