@@ -16,6 +16,10 @@ sequence or test output) and the outcome.
 | F-08 | issue #3 regression | the old "admin renounces" test now reverts, as intended | test rewritten to the deliberate path |
 | F-09 | exploit test SEC-01 | planted re-entrancy drains 10 ETH with a 1 ETH stake | fixed twice (CEI, nonReentrant), regressions proven |
 | F-10 | first CI run of the Slither gate | the action's container can't install the pinned Slither 0.11.6 | Slither pinned to 0.11.4 in CI and locally |
+| F-11 | integration test INT-10 | a naive nonce manager loses 7 of 8 concurrent transfers | local nonce manager, seeded once, locked |
+| F-12 | Anvil probe while building INT-08 | `evm_increaseTime` can't hit an exact second | pin boundaries with `evm_setNextBlockTimestamp` / `evm_mine(ts)` |
+| F-13 | Anvil probe while building the harness | a receipt fetched right after sending may not exist yet | always `wait_for_transaction_receipt` |
+| F-14 | first run of INT-08 | `eth_estimateGas` ignores the pinned timestamp; a boundary test passed for the wrong reason | `call_at` / `send_at` helpers; the test asserts the block time |
 
 No real defect in `SettlementToken` or `Escrow` was found by the fuzz, invariant or
 fork suites in PR 4. All 7 USDC fork tests passed on their first execution in CI.
@@ -302,3 +306,87 @@ The two extra 0.11.4 results are informational notes on OpenZeppelin's inherited
 
 **Lesson:** pin the analyser version *and* run it where CI runs it. A tool version
 that only works locally is a gate that has never run.
+
+---
+
+## F-11: a naive nonce manager loses transactions under concurrency (book Ch 1.3)
+
+**Found by:** `tests/integration/test_nonces.py` (INT-10).
+
+**Setup:** 8 workers send `transfer(payee, i + 1)` from the same account, each signing
+a raw transaction locally. A barrier makes them all choose a nonce before any of them
+sends, which is the same window a busy service hits.
+
+**Naive manager**, `getTransactionCount(addr, "pending")` before each send. One run,
+replayed outside pytest:
+
+```
+nonces chosen:   [0, 0, 0, 0, 0, 0, 0, 0]
+accepted by node: 1   mined ok: 1   payee received: 4 of 36
+  7x 'nonce too low'
+  1x accepted
+```
+
+All eight read the same pending count, so all eight signed nonce 0. The node mined
+the first to arrive (here worker 3, sending 4 units) and rejected the other seven.
+Which one wins changes from run to run. **7 of 8 payments silently didn't happen**
+at the application level: a service that logs "sent" when it signs, or that
+swallows the RPC error, would report 36 units paid when 4 were.
+
+**Local manager** (seed once from `pending`, then hand out under a lock): 8 distinct,
+consecutive nonces; all 8 mined; the payee received exactly 36; the sender's nonce
+is `start + 8`.
+
+**Why the tests assert on state:** the test checks the *payee's balance*, not only
+the exceptions. Depending on timing, a node can accept a duplicate, or replace one
+pending transaction with another, *without* returning an error. Only the balance
+shows that the money didn't move. Stable over 10 consecutive runs.
+
+## F-12: `evm_increaseTime` can't land on an exact second
+
+**Found by:** probing Anvil before writing the deadline tests (INT-08).
+
+`evm_increaseTime(100)` followed by `evm_mine` moved the chain clock by **+102 s**.
+The next transaction, sent 2.2 s of wall time later, was mined **+3 s** after that
+block, not +1. Anvil adds the offset *on top of* wall-clock time, so the result
+depends on how long the test took to get there. A deadline test built on
+`evm_increaseTime` alone would be flaky at the boundary, or only "pass" because it
+lands somewhere vaguely near the right time.
+
+**Fix:** `Chain.increase_time` is for coarse travel only, and its test allows up to
+30 s of drift. Exact seconds use `evm_setNextBlockTimestamp` or `evm_mine(timestamp)`
+(see F-14). `evm_setNextBlockTimestamp(t + 50)` landed at exactly +50.
+
+## F-13: the receipt may not exist straight after sending
+
+**Found by:** the same Anvil probe. Calling `get_transaction_receipt(hash)` right
+after `send_transaction` raised `TransactionNotFound`, even with automine on: Anvil
+mines asynchronously. Every send in the harness goes through
+`Chain._wait` → `wait_for_transaction_receipt`. On a real network this race is the
+normal case, not an edge case.
+
+## F-14: `eth_estimateGas` ignores the pinned block timestamp
+
+**Found by:** the first run of the deadline tests. 3 tests failed with `TooEarly`.
+
+`evm_setNextBlockTimestamp(deadline)` followed by a normal `transact()` never sent
+anything. web3 first calls `eth_estimateGas`, and Anvil simulates that at the
+*latest* block's time, not the pinned one, so the refund reverted during estimation
+with `TooEarly(deadline)`.
+
+**The worse half: a test passed for the wrong reason.**
+`test_refund_one_second_before_deadline_reverts_too_early` was green. It pinned
+`deadline - 1` and expected `TooEarly`, and got it, but from estimation at the
+*latest* block's time, hours before `deadline - 1`. It would have stayed green with
+a refund boundary off by an hour. That's CLAUDE.md's "a revert for the wrong reason
+is a failing test", but with the right error name and argument and the wrong
+*cause*.
+
+**Fix** (`tests/lib/chain.py`):
+- **`call_at(t, fn)`:** `evm_mine(t)`, then `eth_call` against `latest`, so the EVM
+  sees exactly `block.timestamp == t`. The test also asserts `chain.now() == t`.
+- **`send_at(t, fn)`:** pins the next block to `t` and sends with an **explicit gas
+  limit**, so no estimation runs. It then asserts the receipt's block was mined at
+  `t`.
+
+Both boundary tests now prove the second they claim.

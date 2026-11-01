@@ -41,8 +41,8 @@ scripts/          cloud-setup.sh
 | 2 | token | SettlementToken: ERC-20, AccessControl, Pausable, allowlist in `_update` | Role-by-function matrix tested, incl. `transferFrom` bypass | Ch 5–6 | 1–2 | Merged: #2 |
 | 3 | escrow | Escrow contract + unit suite | Every row of the Ch 4.8 table is a test; `forge snapshot --check` in CI | Ch 4, 6 | 2 | Merged: #6 |
 | 4 | properties | Fuzz, invariant handler + ghost vars, USDC fork tests | Invariant catches planted `memory` bug; fork job in CI | Ch 7 | 3 | Merged: #8 |
-| 5 | security | Vulnerable vault, exploit + regression tests, EIP-712 release, Slither gate | 5 replay tests pass; Slither fails CI on high; triage log committed | Ch 9–10 | 4 | In progress |
-| 6 | integration | pytest + web3.py on Anvil: snapshot fixtures, EscrowClient, DealBuilder | Integration CI green; Allure report on GitHub Pages | Ch 8 | 5 |  |
+| 5 | security | Vulnerable vault, exploit + regression tests, EIP-712 release, Slither gate | 5 replay tests pass; Slither fails CI on high; triage log committed | Ch 9–10 | 4 | Merged: #9 |
+| 6 | integration | pytest + web3.py on Anvil: snapshot fixtures, EscrowClient, DealBuilder | Integration CI green; Allure report on GitHub Pages | Ch 8 | 5 | In progress |
 | 7 | indexer | Reorg-aware indexer, reconciliation suite | Reorg test fails on naive, passes on fixed; balances and totalSupply reconcile | Ch 3 | 5–6 |  |
 | 8 | transfer-api | FastAPI service: idempotency keys, status | Status progression, idempotency under concurrency, revert after accept, stuck tx, restart | Ch 8 | 6 |  |
 | 9 | load | Locust read + write, per-user accounts, indexer-lag sampler | `performance-report.md` names the bottleneck; nightly job | Ch 11 | 7 |  |

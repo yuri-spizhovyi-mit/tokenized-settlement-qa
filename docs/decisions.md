@@ -278,7 +278,108 @@ separate duties, as on the token (TOK-04).
 
 ---
 
+## TOK-D1: Account freeze and forced transfer are out of scope
+
+**Status:** Accepted (PR 6, closes #4)
+
+**Decision:** `SettlementToken` has no account-level freeze separate from the
+allowlist, and no forced transfer (seizure). There's also no `burnFrom` by the
+issuer: `burn` only ever burns the minter's own balance (TOK-02).
+
+**What covers the need today:** delisting. `setAllowlisted(account, false)` by
+`ALLOWLIST_ROLE` blocks every movement in or out of the account: it can't send,
+receive, or have an allowance spent (TOK-05, TOK-06). That's a full freeze, applied
+in the same block, and the balance stays exactly where it is. The tests assert
+"delisting must not seize funds" (`test_RevertWhen_SenderDelistedBeforeTransfer`).
+
+**Why out of scope:**
+- **The project's scope is the settlement flow.** Seizure is a different product:
+  it needs a legal basis, a process, and evidence trails that this repo can't model
+  honestly.
+- **A seizure power is the largest trust assumption a token can carry.** It means
+  any holder's balance can move without their consent. Adding it "for completeness"
+  would weaken every other guarantee the tests prove (TOK-05: only allowlisted
+  parties move value).
+- **Delisting is reversible and leaves balances intact; seizure isn't and doesn't.**
+  Shipping the reversible control first is the conservative order.
+
+**What a regulated token would need to add it safely:**
+
+| Element | Requirement |
+|---|---|
+| Separate roles | `FREEZER_ROLE` for account-level freeze, distinct from `ALLOWLIST_ROLE` (onboarding is not enforcement), and `ENFORCER_ROLE` for forced transfer, held by a different multisig than the freezer, so no single key can both freeze and seize. Both administered by `DEFAULT_ADMIN_ROLE`, with its two-day handover (SEC-D2). |
+| Freeze semantics | `frozen[account]` checked in `_update` next to the allowlist. A frozen account keeps its listing, so unfreezing restores it without re-onboarding. Event `AccountFrozen(account, reason)`. |
+| Forced transfer | `forceTransfer(from, to, amount, bytes32 caseRef)`, which bypasses the sender's consent but **not** the recipient's allowlisting. Event `ForcedTransfer(from, to, amount, caseRef)`, with `caseRef` linking to the off-chain legal order. Optionally time-locked so the holder can contest. |
+| Tests | A role matrix row per new function; "seizure never changes `totalSupply`" as an invariant; "a frozen account can still receive a forced return"; event fields asserted for audit reconstruction; and freeze + pause + delist interaction tests. |
+
+**Who would hold the roles:**
+- **`FREEZER_ROLE`:** the compliance operations team. Day-to-day sanctions hits;
+  fast and reversible.
+- **`ENFORCER_ROLE`:** legal or the issuer's board multisig. Rare, slow, and
+  irreversible. It should never be the same keys as `FREEZER_ROLE` or
+  `MINTER_ROLE`.
+- **`DEFAULT_ADMIN_ROLE`:** governance, which appoints both and can't exercise
+  either.
+
+**Revisit when:** a milestone needs court-ordered recovery, or the token targets a
+regime that mandates it, such as tokenised deposits under a specific regulator.
+
+**Tests today:** `SettlementToken.Allowlist.t.sol` (delisting freezes and doesn't
+seize).
+
+---
+
+## INT-D1: Integration tests isolate with evm_snapshot / evm_revert, not redeploys
+
+**Status:** Accepted (PR 6)
+
+**Decision:** One Anvil node and one deployment per pytest session. An autouse
+fixture takes `evm_snapshot` before each test and `evm_revert`s after it. Balances,
+deals, roles and account nonces all reset (INT-11 asserts deals and nonces). Tests
+compute times from the current block, never from a remembered value, so they don't
+depend on whether the clock rewinds.
+
+**Why:** a redeploy per test would make the suite several times slower, and it
+would hide state-leak bugs behind fresh contracts. Snapshots give every test the
+same starting state at a fraction of the cost. Anvil snapshot ids are single-use,
+so each test takes its own.
+
+---
+
+## INT-D2: Exact-second time travel uses mined or pinned timestamps, never estimation
+
+**Status:** Accepted (PR 6)
+
+**Decision:**
+- **Coarse travel** ("a day later") uses `evm_increaseTime` + `evm_mine`.
+- **Reverts at second T:** `Chain.call_at(T)`, which mines a block at T and calls
+  against it.
+- **Successes at second T:** `Chain.send_at(T)`, which pins the next block and sends
+  with explicit gas.
+
+Every boundary test asserts the timestamp it ran at.
+
+**Why:** `evm_increaseTime` drifts with wall-clock time (F-12), and `eth_estimateGas`
+ignores a pinned timestamp (F-14). Either one makes a boundary test test something
+other than its boundary.
+
+---
+
+## INT-D3: web3.py pinned at 7.16.0, the newest 7.x
+
+**Status:** Accepted (PR 6)
+
+**Decision:** `requirements.txt` pins `web3==7.16.0`, plus the libraries the
+assertions depend on: `eth-account`, `eth-abi`, `pytest`, `pytest-timeout` and
+`allure-pytest`. All are exact pins.
+
+**Why:** the milestone specifies web3.py 7.x. 8.0.0 exists, and moving to it is a
+separate change with its own migration (exception classes, middleware API). Exact
+pins keep CI and local runs on identical versions, the same reasoning as Foundry
+(CLAUDE.md) and Slither (F-10).
+
+---
+
 ## Open
 
-- Freeze and forced transfer for `SettlementToken` are out of scope. The entry is
-  tracked in issue #4.
+- None. Issue #4 is recorded above as TOK-D1.
