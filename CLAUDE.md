@@ -24,10 +24,13 @@ contracts/          Foundry project
   test/security/    exploit + regression tests
   lib/              forge-std, openzeppelin-contracts (git submodules, pinned tags)
 services/           indexer/, transfer-api/ (Python)
-tests/              integration/, reconciliation/, ui/, load/
+tests/              Python (3.12) suites against Anvil: integration/ (PR 6); reconciliation/, ui/, load/ later
+  conftest.py       session Anvil + deployment, per-test evm_snapshot/evm_revert
+  lib/              anvil, artifacts, chain, errors, clients (Token/Escrow), builders, eip712, nonces
+requirements.txt    exact-pinned Python deps (web3 7.16.0); pytest.ini at the repo root
 docs/               plan.md, decisions.md, findings.md, slither-triage.md, test strategy, RTM, reports
 scripts/            cloud-setup.sh
-.github/workflows/  contracts.yml (more workflows land with later PRs)
+.github/workflows/  contracts.yml, integration.yml (more workflows land with later PRs)
 ```
 
 ## Setup
@@ -116,6 +119,28 @@ slither . --ignore-compile --config-file slither.config.json --fail-high
   and check the call summary to confirm runs reach live states (`docs/findings.md`,
   F-02 to F-04).
 - Findings, planted or real, go in `docs/findings.md` with their evidence.
+
+## Python conventions (tests/)
+
+- **Python 3.12, deps exact-pinned in `requirements.txt`.** Run with `.venv/bin/pytest`
+  from the repo root. A venv is required; the system Python is externally managed.
+- **Deploy from `contracts/out/` via `lib/artifacts.py`.** Never paste an ABI or
+  bytecode into Python. CI runs `forge build` before pytest.
+- **Tests use service objects** (`TokenClient`, `EscrowClient`) and `DealBuilder`, not
+  raw `contract.functions`. Every write goes through `Chain.send`, which waits for
+  the receipt and asserts `status == 1`, and returns the *decoded event*.
+- **Assert reverts with `expect_revert("Name", *args)`.** It decodes the custom error
+  from the ABIs of every deployed contract. Never assert a bare "it reverted".
+- **Exact-second time travel:** use `Chain.call_at(t, …)` for reverts and `send_at(t, …)` /
+  `refund(..., at=t)` for successes. Never `evm_setNextBlockTimestamp` followed by a
+  normal `transact`: gas estimation ignores the pinned time (F-14). `increase_time`
+  is coarse only (F-12).
+- **Wait for receipts** (`wait_for_transaction_receipt`); never fetch them right after
+  sending (F-13).
+- **Every test has `@pytest.mark.req("INT-xx")`** (module-level `pytestmark` is fine).
+  It becomes an Allure `requirement` label for the RTM.
+- **Concurrency tests assert on chain state** (balances, nonces), not only on
+  exceptions, since a node can drop a transaction without an error (F-11).
 - **Security:** every Slither result gets a row in `docs/slither-triage.md` (fixed,
   false positive with reason, or accepted risk with owner) before merge. A
   `forge-lint: disable-next-line` needs a reason on the same or previous line.

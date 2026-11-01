@@ -329,6 +329,57 @@ seize).
 
 ---
 
+## INT-D1: Integration tests isolate with evm_snapshot / evm_revert, not redeploys
+
+**Status:** Accepted (PR 6)
+
+**Decision:** One Anvil node and one deployment per pytest session. An autouse
+fixture takes `evm_snapshot` before each test and `evm_revert`s after it. Balances,
+deals, roles and account nonces all reset (INT-11 asserts deals and nonces). Tests
+compute times from the current block, never from a remembered value, so they don't
+depend on whether the clock rewinds.
+
+**Why:** a redeploy per test would make the suite several times slower, and it
+would hide state-leak bugs behind fresh contracts. Snapshots give every test the
+same starting state at a fraction of the cost. Anvil snapshot ids are single-use,
+so each test takes its own.
+
+---
+
+## INT-D2: Exact-second time travel uses mined or pinned timestamps, never estimation
+
+**Status:** Accepted (PR 6)
+
+**Decision:**
+- **Coarse travel** ("a day later") uses `evm_increaseTime` + `evm_mine`.
+- **Reverts at second T:** `Chain.call_at(T)`, which mines a block at T and calls
+  against it.
+- **Successes at second T:** `Chain.send_at(T)`, which pins the next block and sends
+  with explicit gas.
+
+Every boundary test asserts the timestamp it ran at.
+
+**Why:** `evm_increaseTime` drifts with wall-clock time (F-12), and `eth_estimateGas`
+ignores a pinned timestamp (F-14). Either one makes a boundary test test something
+other than its boundary.
+
+---
+
+## INT-D3: web3.py pinned at 7.16.0, the newest 7.x
+
+**Status:** Accepted (PR 6)
+
+**Decision:** `requirements.txt` pins `web3==7.16.0`, plus the libraries the
+assertions depend on: `eth-account`, `eth-abi`, `pytest`, `pytest-timeout` and
+`allure-pytest`. All are exact pins.
+
+**Why:** the milestone specifies web3.py 7.x. 8.0.0 exists, and moving to it is a
+separate change with its own migration (exception classes, middleware API). Exact
+pins keep CI and local runs on identical versions, the same reasoning as Foundry
+(CLAUDE.md) and Slither (F-10).
+
+---
+
 ## Open
 
 - None. Issue #4 is recorded above as TOK-D1.

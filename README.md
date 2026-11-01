@@ -34,6 +34,34 @@ without it they are skipped.
 > though every test passes. Use v1.8.7, or regenerate the snapshot only as part
 > of a deliberate Foundry upgrade.
 
+## Run the integration tests (Python + Anvil)
+
+The integration suite (`tests/integration/`) drives the contracts over JSON-RPC
+with web3.py, against a local Anvil node that the test session starts and stops
+itself. It deploys from `contracts/out/`, so build the contracts first.
+
+You need Python **3.12**, plus Foundry v1.8.7 (which provides `anvil`) on your `PATH`:
+
+```bash
+python3.12 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+(cd contracts && forge build)
+.venv/bin/pytest                      # all integration tests, about 20 s
+.venv/bin/pytest -k signed_release    # one group
+```
+
+For the Allure report locally (needs Java 17+ and Node):
+
+```bash
+.venv/bin/pytest --alluredir=allure-results
+npx allure-commandline@2.46.1 serve allure-results
+```
+
+CI runs the same suite in `.github/workflows/integration.yml` (job
+`integration (pytest + anvil)`) and publishes the report to GitHub Pages from `main`.
+
+## Cloud sessions
+
 In a Claude cloud session, where `foundryup` is blocked, run
 `bash scripts/cloud-setup.sh` instead. It installs the same pinned version from
 GitHub release binaries.
