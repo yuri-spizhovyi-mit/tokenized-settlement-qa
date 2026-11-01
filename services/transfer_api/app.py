@@ -2,7 +2,8 @@
 
     POST /transfers        Idempotency-Key header + {"to": "0x...", "amount": "123"}
                            202 new | 200 replay of the same request | 409 key reused for
-                           a different request | 422 invalid, or would revert now
+                           a different request | 422 invalid, or would revert now |
+                           503 + Retry-After: backlog full, retry with the same key
     GET  /transfers/{id}   200 status, attempts and history | 404
     GET  /health           200
 
@@ -19,7 +20,7 @@ from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, StrictStr
 
-from .service import IdempotencyConflict, InvalidRequest, Rejected, TransferService
+from .service import Busy, IdempotencyConflict, InvalidRequest, Rejected, TransferService
 
 
 class TransferRequest(BaseModel):
@@ -63,6 +64,8 @@ def create_app(service: TransferService, *, worker_interval: float | None = None
             raise HTTPException(422, {"error": "WouldRevert", "name": exc.name, "args": args}) from exc
         except IdempotencyConflict as exc:
             raise HTTPException(409, {"error": "IdempotencyKeyReused", "detail": str(exc)}) from exc
+        except Busy as exc:  # backpressure: retry later, with the same key (TAPI-D8)
+            raise HTTPException(503, {"error": "Busy", "detail": str(exc)}, headers={"Retry-After": "1"}) from exc
         return JSONResponse(view, status_code=202 if created else 200)
 
     @app.get("/transfers/{transfer_id}")

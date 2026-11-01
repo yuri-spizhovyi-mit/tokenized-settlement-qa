@@ -28,6 +28,10 @@ sequence or test output) and the outcome.
 | F-20 | Anvil probe for TAPI-09 | Anvil refuses underpriced sends and silently *drops* pool transactions a fee spike made underpriced | stuck = "no receipt for N blocks", whatever the cause; re-sign the same nonce |
 | F-21 | TAPI-11 | re-signing a transfer after a crash pays the recipient twice | write-ahead attempts; a restart rebroadcasts the stored bytes |
 | F-22 | first transfer-API run on Postgres | `time.time_ns()` in an `Integer` column: fine on SQLite, "integer out of range" on Postgres | `BigInteger`; CI keeps running Postgres |
+| F-23 | nightly load run (PR 9) | the worker submits the whole backlog before tracking anything; the API accepts without limit; confirmations stall | bounded batch per tick; 503 backpressure; 4.0 → 12.9 confirmed/s |
+| F-24 | `profile_worker.py` | 6 of 8 JSON-RPC calls per transfer are bookkeeping reads of the head | one chain snapshot per tick phase; 8.0 → 2.1 calls |
+| F-25 | load-run sampler | the indexer's full-balance query grows with the event count: 0.7 → 162 ms over 15k events | reported, not fixed (IDX-D4 revisit; performance-report.md) |
+| F-26 | first reading of the load report | two harness metric bugs: start-up catch-up reported as 52-block indexer lag; 503s counted as accepted transfers | warm-up excluded, created transfers counted; both runs re-rendered |
 
 No real defect in `SettlementToken` or `Escrow` was found by the fuzz, invariant or
 fork suites in PR 4. All 7 USDC fork tests passed on their first execution in CI.
@@ -599,3 +603,87 @@ case for running CI on the production database engine, not only the convenient o
 The transfer API also met F-13 again: right after a broadcast, Anvil may not have
 the receipt yet, so the same `tick()` can't always see it mined. The worker doesn't
 wait; the next tick does. Tests use `wait_for_attempts`, which waits on the node.
+
+## F-23: confirmations stall behind an unbounded backlog (load)
+
+**Found by:** the first `nightly` load run (`tests/load/run_load.py`, 40 users, 180 s).
+The run failed its correctness gate: after a 120 s drain, 5,153 transfers were still
+`submitted`. Evidence: `docs/performance/nightly-before.md`.
+
+The sampler shows the mechanism:
+
+```
+t=13 s   accepted 288    submitted 39    confirmed 34
+t=65 s   accepted 1704   submitted 253   confirmed 140
+t=130 s  accepted 3517   submitted 675   confirmed 140   <- no confirmation in 65 s
+```
+
+Two defects together:
+- **Head-of-line blocking:** `tick()` submitted *every* accepted transfer before
+  tracking any receipt. With thousands queued, one tick took minutes, so receipts
+  and confirmations waited for the whole queue.
+- **No admission control:** the API accepted 33.5 transfers/s while one hot wallet
+  confirmed 4.0/s. Every client's wait grew with the queue, and "accepted" no longer
+  meant "will settle".
+
+**Fix (TAPI-D8):**
+- `tick()` submits at most 25 transfers, then tracks and confirms (TAPI-18).
+- Over 500 unsettled transfers, `POST /transfers` answers 503 with `Retry-After: 1`.
+  The Locust client retries with the same key, which idempotency makes safe (TAPI-17).
+
+After the fix the same load **passes**: 2,862 of 2,862 confirmed, 12.9 confirmed/s
+(3.2×), backlog capped at 509, drain 17.8 s. The remaining limit is the serial worker
+itself (performance-report.md).
+
+## F-24: most of the worker's RPC calls were bookkeeping
+
+**Found by:** `tests/load/profile_worker.py`, counting at web3's transport layer.
+
+```
+before: 8.0 JSON-RPC calls per transfer
+  eth_blockNumber 5.0   eth_getBlockByNumber 1.0   eth_sendRawTransaction 1.0   eth_getTransactionReceipt 1.0
+after:  2.1 per transfer
+  eth_sendRawTransaction 1.0   eth_getTransactionReceipt 1.0   eth_getBlockByNumber 0.1
+```
+
+Each status row recorded the current block number with its own call, and each
+signature read the base fee again. Only the send and the receipt lookup are
+essential.
+
+**Fix:** one snapshot of the head (number and base fee) per tick phase. It is
+refreshed after any refused send, because a refusal can mean the base fee moved. That
+keeps TAPI-15 (fee spike mid-tick) passing. The worker alone went from 20.9 to 27.7
+transfers/s.
+
+**A trap on the way:** the first counter patched `provider.make_request` on the
+instance and counted **0** calls. web3 7 wraps `make_request` with a request-caching
+decorator and calls through it, so the patch never ran. Counting at
+`provider._make_request` (the transport) gave the real numbers. A zero is a result to
+distrust, not to report.
+
+## F-25: the indexer's full-balance query is O(events)
+
+**Found by:** the load sampler, which times `queries.balances()` every 0.5 s.
+
+0.7 ms at the start, **162 ms** at 15,221 events (before run) and 77 ms at 12,180
+(after run). Balances are replayed from events on every read (IDX-D4). That's fine
+for a reconciliation at a pinned block. It is not fine as an API read path at this
+volume. **Not fixed:** the indexer kept up (lag max 2 blocks), and the trade-off is
+recorded in performance-report.md.
+
+## F-26: two metric bugs in the load report itself
+
+**Found by:** reading the first before/after reports side by side.
+
+- **Indexer lag max 52 blocks in *both* runs.** That's suspicious when the indexer
+  never fell behind otherwise. The sampler showed it was a single sample at
+  t = 0.5 s: the indexer catching up on the ~87 setup blocks, not load.
+  - Fix: the SUT syncs the indexer before load starts.
+  - Fix: the summary skips samples until the indexer first reaches the head.
+  - Corrected: max 2.
+- **"Accepted/s" counted every `POST`,** including 503 refusals and replays.
+  - Fix: it counts transfers actually created.
+  - Corrected: 15.9/s after, not 21.3.
+
+Both runs were re-summarised from their raw files with the corrected code
+(`run_load.rerender`). The published numbers come from the same data.
