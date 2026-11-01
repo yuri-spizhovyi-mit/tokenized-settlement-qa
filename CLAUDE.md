@@ -119,6 +119,11 @@ slither . --ignore-compile --config-file slither.config.json --fail-high
   and check the call summary to confirm runs reach live states (`docs/findings.md`,
   F-02 to F-04).
 - Findings, planted or real, go in `docs/findings.md` with their evidence.
+- **Security:** every Slither result gets a row in `docs/slither-triage.md` (fixed,
+  false positive with reason, or accepted risk with owner) before merge. A
+  `forge-lint: disable-next-line` needs a reason on the same or previous line.
+- Signed messages are tested for every replay: same signature twice, other chain,
+  other contract, expired, other deal (SEC-11 to SEC-15).
 
 ## Python conventions (tests/)
 
@@ -141,8 +146,3 @@ slither . --ignore-compile --config-file slither.config.json --fail-high
   It becomes an Allure `requirement` label for the RTM.
 - **Concurrency tests assert on chain state** (balances, nonces), not only on
   exceptions, since a node can drop a transaction without an error (F-11).
-- **Security:** every Slither result gets a row in `docs/slither-triage.md` (fixed,
-  false positive with reason, or accepted risk with owner) before merge. A
-  `forge-lint: disable-next-line` needs a reason on the same or previous line.
-- Signed messages are tested for every replay: same signature twice, other chain,
-  other contract, expired, other deal (SEC-11 to SEC-15).
