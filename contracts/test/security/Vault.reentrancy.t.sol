@@ -2,8 +2,8 @@
 pragma solidity 0.8.28;
 
 import {Test} from "forge-std/Test.sol";
-import {VaultBase, VulnerableVault} from "../../src/vulnerable/Vault.sol";
-import {CeiVault, GuardedVault} from "../../src/vulnerable/FixedVaults.sol";
+import {VaultBase, VulnerableVault} from "../fixtures/vault/Vault.sol";
+import {CeiVault, GuardedVault} from "../fixtures/vault/FixedVaults.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {ReentrancyAttacker} from "./ReentrancyAttacker.sol";
 

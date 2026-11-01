@@ -35,6 +35,14 @@ jobs:
       - name: Show versions
         run: forge --version
 
+      # SEC-D1: deliberately vulnerable fixtures live in test/fixtures/, never in src/.
+      # Every fixture carries this banner, so finding it under src/ means one moved back.
+      - name: No vulnerable fixtures in src/
+        run: |
+          if grep -rl "DELIBERATELY VULNERABLE" src/; then
+            echo "::error::a deliberately vulnerable fixture is under src/ (SEC-D1)"; exit 1
+          fi
+
       - name: Build (with contract sizes)
         run: forge build --sizes
 
@@ -50,8 +58,8 @@ jobs:
       - name: Gas snapshot
         run: forge snapshot --check --match-path 'test/unit/*'
 
-  # Static analysis gate: fails on any High finding outside lib/, test/ and the
-  # deliberately vulnerable fixtures in src/vulnerable/ (contracts/slither.config.json).
+  # Static analysis gate: fails on any High finding outside lib/ and test/
+  # (contracts/slither.config.json). The deliberately vulnerable fixtures live in test/fixtures/.
   # Every finding, gated or not, is triaged in docs/slither-triage.md.
   slither:
     name: slither (fail on high)

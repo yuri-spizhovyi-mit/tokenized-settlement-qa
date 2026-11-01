@@ -1,4 +1,4 @@
 {
-  "filter_paths": "lib/|test/|src/vulnerable/",
+  "filter_paths": "lib/|test/",
   "exclude_dependencies": true
 }

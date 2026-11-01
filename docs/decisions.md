@@ -190,18 +190,22 @@ so their gas is a real regression signal.
 
 ---
 
-## SEC-D1: Deliberately vulnerable code lives in `src/vulnerable/` and is never deployable
+## SEC-D1: Deliberately vulnerable code lives in `test/fixtures/` and is never deployable
 
-**Status:** Accepted (PR 5)
+**Status:** Accepted (PR 5); amended by issue #10 (moved out of `src/vulnerable/`)
 
 **Decision:** `VulnerableVault` and its fixed versions (`CeiVault`, `GuardedVault`)
-live in `contracts/src/vulnerable/`. A banner marks them as test fixtures. No deploy
-script references them, and the Slither CI gate excludes the folder by path. Their
-findings are still triaged in `docs/slither-triage.md`.
+live in `contracts/test/fixtures/vault/`. A banner marks them as test fixtures.
+`contracts/src/` holds only `SettlementToken` and `Escrow`. The Slither gate excludes
+`test/` as a whole, so it has no special case for the fixtures. Their findings are
+still triaged in `docs/slither-triage.md`, with a documented command that reproduces
+them, including the intended High.
 
-**Why:** they have to compile as real contracts, so the exploit runs against real
-bytecode (test-only `.t.sol` files would hide them from Slither and forge-lint
-entirely). They also have to be impossible to mistake for product code.
+**Why:** they have to compile as real contracts (plain `.sol`, not `.t.sol`), so the
+exploit runs against real bytecode, and forge-lint and Slither can still analyse
+them. They also have to be impossible to mistake for product code. Under `src/`,
+anyone reading the product saw exploit fixtures next to it, any tooling that globs
+`src/` would pick them up, and the gate needed a path exception to stay green.
 
 ---
 
@@ -479,7 +483,7 @@ Anvil), instead of returning the new block's logs under the old block's hash.
 `services/indexer/`. It subclasses the real indexer and flips one flag.
 
 **Why:** deliberately broken code belongs with the tests that use it, not with code
-that could be deployed. This is the same rule issue #10 applies to `src/vulnerable/`.
+that could be deployed. This is the same rule SEC-D1 applies to the vulnerable vault (issue #10).
 Being a one-flag subclass, it can't drift from the real indexer in any other way, so
 the reorg tests compare exactly one behaviour.
 
