@@ -8,13 +8,15 @@ Two strategies, so a test can show the difference:
   one of their transactions can ever be mined.
 - `LocalNonceManager` asks the node once, then hands out consecutive nonces under a
   lock. Concurrent workers get distinct nonces, whatever order the sends arrive in.
+  Since PR 8 it is the transfer API's `NonceManager`, which also re-syncs after a
+  rejected send (issue #12, F-19).
 """
 
 from __future__ import annotations
 
-import threading
-
 from web3 import Web3
+
+from transfer_api.nonces import NonceManager
 
 
 class NaiveNonceManager:
@@ -26,13 +28,5 @@ class NaiveNonceManager:
         return self._w3.eth.get_transaction_count(self._address, "pending")
 
 
-class LocalNonceManager:
-    def __init__(self, w3: Web3, address: str):
-        self._next = w3.eth.get_transaction_count(address, "pending")
-        self._lock = threading.Lock()
-
-    def next(self) -> int:
-        with self._lock:
-            nonce = self._next
-            self._next += 1
-            return nonce
+# The production manager: seed once, lock, and re-sync after a rejected send.
+LocalNonceManager = NonceManager

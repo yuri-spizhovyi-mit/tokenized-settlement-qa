@@ -18,7 +18,7 @@ jobs:
     name: integration (pytest + anvil)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # The indexer and reconciliation suites write to Postgres here (SQLite in sessions).
+    # The indexer, reconciliation and transfer API suites use Postgres here (SQLite in sessions).
     services:
       postgres:
         image: postgres:16
@@ -60,8 +60,8 @@ jobs:
         working-directory: contracts
         run: forge build
 
-      # tests/integration, tests/indexing and tests/reconciliation (pytest.ini testpaths).
-      - name: Integration, indexer and reconciliation tests (Anvil + Postgres)
+      # tests/integration, indexing, reconciliation and transfers (pytest.ini testpaths).
+      - name: Integration, indexer, reconciliation and transfer API tests (Anvil + Postgres)
         run: pytest --alluredir=allure-results
 
       - name: Upload Allure results

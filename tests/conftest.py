@@ -21,6 +21,7 @@ pytest.register_assert_rewrite("lib")
 from sqlalchemy import Engine  # noqa: E402
 from web3 import Web3  # noqa: E402
 
+import transfer_api  # noqa: E402
 from indexer import Indexer, create_schema, drop_schema, make_engine  # noqa: E402
 
 from lib import artifacts  # noqa: E402
@@ -123,6 +124,46 @@ def make_indexer(system: System, engine: Engine) -> Callable[..., Indexer]:
             start_block=start_block,
             confirmations=confirmations,
         )
+
+    return build
+
+
+# ---- transfer API (PR 8) ----------------------------------------------------------------
+#
+# Same database as the indexer fixtures (SQLite file per test, or CI's Postgres), its
+# own tables. The hot wallet is the `relayer` account: allowlisted and funded here.
+
+HOT_WALLET_FUNDS = 1_000_000 * 10**6  # 1M USDC (6 decimals)
+
+
+@pytest.fixture
+def transfer_engine(db_url: str) -> Engine:
+    eng = transfer_api.make_engine(db_url)
+    transfer_api.drop_schema(eng)
+    transfer_api.create_schema(eng)
+    yield eng
+    transfer_api.drop_schema(eng)
+    eng.dispose()
+
+
+@pytest.fixture
+def hot_wallet(system: System):
+    """The service's signing account, allowlisted and funded, with payee allowlisted."""
+    a, token = system.accounts, system.token
+    for account in (a.relayer, a.payee):
+        token.set_allowlisted(a.compliance, account.address, True)
+    token.mint(a.minter, a.relayer.address, HOT_WALLET_FUNDS)
+    return a.relayer
+
+
+@pytest.fixture
+def make_service(system: System, transfer_engine: Engine, hot_wallet) -> Callable[..., transfer_api.TransferService]:
+    """Build a TransferService (or subclass). Pass `engine=` for a restarted process."""
+
+    def build(cls=transfer_api.TransferService, **kw) -> transfer_api.TransferService:
+        engine_ = kw.pop("engine", transfer_engine)
+        kw.setdefault("confirmations", 1)
+        return cls(system.chain.w3, engine_, system.token.contract, hot_wallet, **kw)
 
     return build
 

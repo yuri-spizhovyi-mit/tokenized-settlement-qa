@@ -489,6 +489,141 @@ the reorg tests compare exactly one behaviour.
 
 ---
 
+## TAPI-D1: The service lives in `services/transfer_api/`
+
+**Status:** Accepted (PR 8)
+
+**Decision:** the plan's `services/transfer-api/` became `services/transfer_api/`, an
+importable package next to `services/indexer/`. Its tests are in `tests/transfers/`;
+the name `tests/transfer_api/` would shadow the package on `pythonpath`.
+
+**Why:** a hyphen can't be imported; the tests import the service directly to drive
+its worker step by step and to simulate crashes.
+
+---
+
+## TAPI-D2: Idempotency-Key semantics
+
+**Status:** Accepted (PR 8)
+
+**Decision:**
+- `POST /transfers` requires an `Idempotency-Key` header (1 to 128 characters).
+- Same key + same request (recipient and amount): **200** and the original transfer,
+  at whatever status it has reached. The first request gets **202**.
+- Same key + a different request: **409** `IdempotencyKeyReused`. Nothing is created.
+- A request refused at accept time (422) stores nothing, so the key stays free.
+- Keys never expire in this version.
+- The database's UNIQUE constraint on the key decides concurrent races. The loser
+  of an INSERT race is answered as a replay.
+
+**Why:** a client that times out must be able to retry blindly and get the same
+transfer back. A reused key with a different body is a client bug; returning the old
+transfer would hide it. Deciding in application code (check, then insert) loses
+under concurrency; the database constraint can't.
+
+**Tests:** TAPI-05 (replay before and after confirmation), TAPI-06 (409 for a changed
+amount or recipient), TAPI-07 (10 concurrent clients, one key: one 202, nine 200, one
+payment), TAPI-03 (key reusable after a 422).
+
+---
+
+## TAPI-D3: Amounts are decimal strings of base units
+
+**Status:** Accepted (PR 8)
+
+**Decision:** `amount` must be a JSON string of digits (base units, 1 to 2^256 - 1).
+A JSON number, a fraction, a negative, zero or an overflow is a 422. Responses
+return `amount` as a string.
+
+**Why:** most JSON clients parse numbers as IEEE doubles. 2^53 + 1 base units would
+arrive as 2^53 before our code ever sees it. This is the same class of bug as F-16,
+one layer further out.
+
+**Tests:** TAPI-04 (malformed bodies, and 2^53 + 1 round-trips exactly).
+
+---
+
+## TAPI-D4: Simulate at accept, send with explicit gas
+
+**Status:** Accepted (PR 8)
+
+**Decision:** `accept` runs `transfer(to, amount)` as an `eth_call` from the hot wallet
+and refuses with the decoded custom error if it would revert. The worker sends later
+with a fixed gas limit (100,000) and no `eth_estimateGas`.
+
+**Why:** the request should fail fast while the client is still waiting. Between
+accept and send, the world can change (a recipient delisted, the token paused).
+Estimating again at send time would turn that into a refusal before broadcast and a
+retry loop. Sending makes it a mined failure: one clear `failed` status with the
+decoded reason, at the cost of the gas for one failed transaction. Estimation also
+misbehaves around pinned time on Anvil (F-14).
+
+**Tests:** TAPI-02 (revert after accept: `failed`, `AccountNotAllowlisted(payee)`, no
+tokens moved, nonce used), TAPI-03 (refused at accept).
+
+---
+
+## TAPI-D5: One worker process per hot wallet
+
+**Status:** Accepted (PR 8)
+
+**Decision:** nonces are allocated in process (`NonceManager`), and `tick()` holds a
+lock, so one process may tick from several threads safely. Two processes sending
+from the same key are not supported.
+
+**Why:** two processes would allocate the same nonces. Supporting that needs nonce
+allocation in the database (a row lock per wallet) or one wallet per worker. Both
+are more machinery than this milestone needs. The load milestone (PR 9) may revisit
+it.
+
+**Tests:** TAPI-07 (overlapping ticks in one process), TAPI-14 (an outside send from
+the same key is *recovered*, not supported as normal operation).
+
+---
+
+## TAPI-D6: Stuck and refused transactions
+
+**Status:** Accepted (PR 8)
+
+**Decision:**
+- **Stuck** means no receipt for `stuck_after_blocks` (default 3), whatever the cause.
+  The worker re-signs the same nonce at `max(1.25 x previous max fee, 2 x base fee +
+  tip)` and checks receipts for every attempt.
+- **Refused** at broadcast: the transfer goes back to `accepted` and the nonce manager
+  re-syncs. "nonce too low" is retried at once with the re-synced nonce. After 5
+  refused sends a transfer is `failed`.
+- **Nonce gap with no error:** each missing nonce is filled with a 0-value
+  self-transfer.
+- **Confirmed** means `confirmations` blocks on top of the receipt's block: 1 in
+  tests, 2 in the CLI. A reorg that removes a *mined* transaction is not tracked back
+  in this version. The indexer (IDX-D1) is where reorgs are handled; the API reports
+  submission status.
+
+**Why:** F-20 (Anvil drops rather than keeps underpriced transactions) and F-19 (a
+hole stalls everything behind it).
+
+**Tests:** TAPI-09, TAPI-13..TAPI-16.
+
+---
+
+## TAPI-D7: Write-ahead attempts; a restart rebroadcasts, never re-signs
+
+**Status:** Accepted (PR 8)
+
+**Decision:** every signed transaction is stored in `attempts` (raw bytes, hash, nonce,
+fee) in the same database transaction that moves the transfer to `signed`, *before*
+it is broadcast. On start, the worker rebroadcasts every `signed` transfer's stored
+bytes. If the node answers `nonce too low` and a receipt exists for that hash, the
+transfer was already sent and is marked submitted.
+
+**Why:** the crash window between "sent" and "recorded as sent" can't be closed, only
+made harmless. Rebroadcasting identical bytes is idempotent on chain; signing again is
+not (F-21).
+
+**Tests:** TAPI-10, TAPI-11, TAPI-12.
+
+---
+
 ## Open
 
 - None. Issue #4 is recorded above as TOK-D1.
