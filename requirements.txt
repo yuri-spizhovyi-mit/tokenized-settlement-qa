@@ -1,0 +1,8 @@
+# Integration test dependencies (Python 3.12). Exact pins: CI and local runs must
+# resolve the same versions. web3 is held on 7.x as the PR 6 spec requires.
+web3==7.16.0
+eth-account==0.14.0
+eth-abi==6.0.0
+pytest==9.2.0
+pytest-timeout==2.4.0
+allure-pytest==2.16.2
