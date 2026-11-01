@@ -12,3 +12,9 @@ sqlalchemy==2.1.6
 psycopg[binary]==3.3.6
 hexbytes==2.0.0
 eth-utils==6.0.0
+# Transfer API (PR 8): FastAPI on uvicorn; httpx drives it over real HTTP in tests.
+# pydantic is imported directly (request model), so it is pinned too.
+fastapi==0.162.0
+pydantic==2.14.2
+uvicorn==0.54.0
+httpx==0.28.1
