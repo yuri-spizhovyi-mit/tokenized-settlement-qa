@@ -14,19 +14,26 @@ locally too: identical verdicts, minus the two lib-only results #12 and #13 belo
 cd contracts
 forge build --build-info --skip './test/**' --skip './script/**'
 slither . --ignore-compile --config-file slither.config.json --fail-high   # what CI runs
-slither . --ignore-compile --filter-paths "lib/|test/"                     # incl. src/vulnerable
+
+# The deliberately vulnerable fixtures (rows 6-11), on their own. Build src/ plus
+# test/fixtures/ only: a full test build adds Foundry's generated foundry-pp/ helpers,
+# which crytic-compile can't resolve.
+forge build --build-info --skip './test/unit/**' --skip './test/fuzz/**' \
+  --skip './test/invariant/**' --skip './test/fork/**' --skip './test/security/**' --skip './script/**'
+slither . --ignore-compile --filter-paths "lib/|src/" --fail-high          # exits 255: rows 6-7
 ```
 
 ## The CI gate
 
 - **What it does:** the `slither` job in `.github/workflows/contracts.yml` uses
   `crytic/slither-action` with `fail-on: high`, scoped by `contracts/slither.config.json`.
-- **What it excludes:** `lib/` (third-party), `test/`, and `src/vulnerable/`. The
-  vulnerable vault *must* contain a High reentrancy finding: it's the exploit under
-  test (SEC-01). Gating on it would make the gate fail on the very thing the tests
-  prove. Its findings are still triaged below.
-- **Proof that it bites:** with `src/vulnerable/` back in scope, `--fail-high` exits
-  255 on `reentrancy-eth` (PR 5, run locally).
+- **What it excludes:** `lib/` (third-party) and `test/`. The deliberately vulnerable
+  vault lives in `test/fixtures/vault/` (SEC-D1, issue #10), so the gate needs no
+  special case for it. It *must* contain a High reentrancy finding: it's the exploit
+  under test (SEC-01). Its findings are still triaged below.
+- **Proof that it bites:** run on the fixtures (second command above), `--fail-high`
+  exits 255 on `reentrancy-eth`. Re-checked after the move: the gate scope still gives
+  the same 7 results, and the fixtures the same 6 (plus #12-#13, inherited from `src/`).
 
 ## Results in the gated scope (7 total; 0 High; gate passes)
 
@@ -40,10 +47,10 @@ slither . --ignore-compile --filter-paths "lib/|test/"                     # inc
 | 12 | `unindexed-event-address` | Informational | OZ `Pausable.Paused(address)`, inherited by SettlementToken (`lib/`) | **False positive (out of scope)** | OpenZeppelin's own event signature; changing it would break indexers that expect the standard event. Slither 0.11.4 reports it despite the `lib/` filter, because it's inherited; 0.11.6 does not. |
 | 13 | `unindexed-event-address` | Informational | OZ `Pausable.Unpaused(address)` (`lib/`) | **False positive (out of scope)** | Same as #12. |
 
-## Results outside the gate: `src/vulnerable/` (6 total; 2 High)
+## Results outside the gate: `test/fixtures/vault/` (6 total; 2 High)
 
 These contracts are test fixtures, deliberately vulnerable and never deployable
-(SEC-D1). No deploy script exists for them.
+(SEC-D1). They live under `test/`, so nothing that builds or deploys `src/` sees them.
 
 | # | Detector | Severity | Location | Verdict | Reason |
 |---|---|---|---|---|---|

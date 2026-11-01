@@ -43,7 +43,7 @@ scripts/          cloud-setup.sh
 | 4 | properties | Fuzz, invariant handler + ghost vars, USDC fork tests | Invariant catches planted `memory` bug; fork job in CI | Ch 7 | 3 | Merged: #8 |
 | 5 | security | Vulnerable vault, exploit + regression tests, EIP-712 release, Slither gate | 5 replay tests pass; Slither fails CI on high; triage log committed | Ch 9–10 | 4 | Merged: #9 |
 | 6 | integration | pytest + web3.py on Anvil: snapshot fixtures, EscrowClient, DealBuilder | Integration CI green; Allure report on GitHub Pages | Ch 8 | 5 | Merged: #11 |
-| 7 | indexer | Reorg-aware indexer, reconciliation suite | Reorg test fails on naive, passes on fixed; balances and totalSupply reconcile | Ch 3 | 5–6 | In progress |
+| 7 | indexer | Reorg-aware indexer, reconciliation suite | Reorg test fails on naive, passes on fixed; balances and totalSupply reconcile | Ch 3 | 5–6 | Merged: #13 |
 | 8 | transfer-api | FastAPI service: idempotency keys, status | Status progression, idempotency under concurrency, revert after accept, stuck tx, restart | Ch 8 | 6 |  |
 | 9 | load | Locust read + write, per-user accounts, indexer-lag sampler | `performance-report.md` names the bottleneck; nightly job | Ch 11 | 7 |  |
 | 10 | ui | Minimal transfer page, mock EIP-1193 wallet, Playwright suite | Large-value and rejected-signature tests pass; traces on failure | Ch 12 | 7 |  |

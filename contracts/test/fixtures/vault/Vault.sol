@@ -7,8 +7,8 @@ pragma solidity 0.8.28;
 // ║  `VulnerableVault.withdraw` sends ETH before it zeroes the balance, so a     ║
 // ║  contract receiver can re-enter and withdraw again (book Ch 9.1, SWC-107).   ║
 // ║  It exists so test/security can prove the exploit and the two fixes below.   ║
-// ║  The script/ folder has no deploy script for it, and CI's Slither gate       ║
-// ║  excludes this file by path; see docs/slither-triage.md.                     ║
+// ║  It lives under test/, outside src/, so no build of src/ or deploy tooling   ║
+// ║  picks it up; its Slither results are triaged in docs/slither-triage.md.     ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
 /// @notice Minimal ETH vault shared by the vulnerable and fixed versions.
