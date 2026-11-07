@@ -37,10 +37,12 @@ tests/              Python (3.12) suites against Anvil: integration/ (PR 6), ind
                     nonces, activity, indexing, reconcile, transfers, api_server,
                     wallet (mock EIP-1193), naive_indexer and naive_transfer (DELIBERATELY BROKEN)
 requirements.txt    exact-pinned Python deps (web3 7.16.0); pytest.ini at the repo root
-docs/               plan.md, decisions.md, findings.md, slither-triage.md, performance-report.md
-                    (+ performance/ evidence), test strategy, RTM, reports
-scripts/            cloud-setup.sh
-.github/workflows/  contracts.yml, integration.yml, ui.yml, nightly.yml (load test, 03:17 UTC)
+docs/               plan.md, test-strategy.md, requirements.csv (catalogue) -> rtm.md / rtm.csv
+                    (generated), security-test-plan.md, uat-scripts.md, decisions.md, findings.md,
+                    slither-triage.md, performance-report.md (+ performance/ evidence)
+scripts/            cloud-setup.sh, rtm.py (traceability), evidence_pack.py (release pack)
+.github/workflows/  contracts.yml, integration.yml (+ traceability), ui.yml, nightly.yml (load,
+                    03:17 UTC), release.yml (evidence pack on v* tags)
 ```
 
 ## Setup
@@ -111,8 +113,11 @@ slither . --ignore-compile --config-file slither.config.json --fail-high
   `test_RevertWhen_<Condition>` for failure paths, for example
   `test_RevertWhen_SenderNotAllowlisted`. Fuzz tests use `testFuzz_...`, and
   invariants use `invariant_...`.
-- Each new test names the requirement or vulnerability class it covers, in
-  its NatSpec or in the RTM.
+- Each new test names the requirement it covers: an ID in its NatSpec (Solidity) or
+  `@pytest.mark.req` (Python). A new requirement goes into `docs/requirements.csv` first;
+  then run `python scripts/rtm.py` and commit `docs/rtm.*`. CI fails on an untested
+  requirement or an uncatalogued ID (PROC-D1). Shorthand `TOK-02/03/04` is understood;
+  ranges like `UI-01..UI-08` are not.
 - **Assert exact custom errors.** Use
   `vm.expectRevert(abi.encodeWithSelector(Err.selector, arg1, arg2))`, never a
   bare `vm.expectRevert()` or a string match. A revert for the wrong reason is

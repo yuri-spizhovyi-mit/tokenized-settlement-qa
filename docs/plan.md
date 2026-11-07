@@ -46,8 +46,8 @@ scripts/          cloud-setup.sh
 | 7 | indexer | Reorg-aware indexer, reconciliation suite | Reorg test fails on naive, passes on fixed; balances and totalSupply reconcile | Ch 3 | 5–6 | Merged: #13 |
 | 8 | transfer-api | FastAPI service: idempotency keys, status | Status progression, idempotency under concurrency, revert after accept, stuck tx, restart | Ch 8 | 6 | Merged: #15 |
 | 9 | load | Locust read + write, per-user accounts, indexer-lag sampler | `performance-report.md` names the bottleneck; nightly job | Ch 11 | 7 | Merged: #16 |
-| 10 | ui | Minimal transfer page, mock EIP-1193 wallet, Playwright suite | Large-value and rejected-signature tests pass; traces on failure | Ch 12 | 7 | In progress |
-| 11 | process | Test strategy, RTM, security plan, UAT scripts, evidence pack | Every requirement traces to a test; release workflow builds the pack | Ch 13–14 | 8 |  |
+| 10 | ui | Minimal transfer page, mock EIP-1193 wallet, Playwright suite | Large-value and rejected-signature tests pass; traces on failure | Ch 12 | 7 | Merged: #17 |
+| 11 | process | Test strategy, RTM, security plan, UAT scripts, evidence pack | Every requirement traces to a test; release workflow builds the pack | Ch 13–14 | 8 | In progress |
 | 12 | readme | Architecture figure, findings, badges, how to run | A reviewer gets the story in 2 minutes | App A | 8 |  |
 
 PR numbers in the Status column are GitHub pull request numbers. They differ from the
