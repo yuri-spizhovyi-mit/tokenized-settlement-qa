@@ -72,6 +72,20 @@ jobs:
           path: allure-results
           retention-days: 14
 
+  # Every requirement in docs/requirements.csv must be cited by a test, every cited
+  # requirement must be catalogued, and docs/rtm.csv must be up to date (PR 11).
+  traceability:
+    name: traceability (rtm)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Requirements traceability check
+        run: python scripts/rtm.py --check
+
   # Publishes the Allure report to GitHub Pages, on main only. Requires the repo's
   # Pages source to be set to "GitHub Actions" (Settings -> Pages).
   allure-report:

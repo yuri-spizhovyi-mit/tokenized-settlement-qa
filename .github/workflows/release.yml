@@ -1,0 +1,128 @@
+name: release
+
+# Builds the evidence pack (docs/test-strategy.md, section 5): every suite at release
+# settings, coverage, Slither, the RTM, and the process documents, with SHA-256 sums.
+# scripts/evidence_pack.py refuses to build the pack if anything failed.
+# - a tag push (v*) publishes the pack as a GitHub release asset;
+# - workflow_dispatch builds it as a workflow artifact only.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  evidence:
+    name: evidence pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write  # to attach the pack to the GitHub release on a tag
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: indexer
+          POSTGRES_PASSWORD: indexer
+          POSTGRES_DB: indexer
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U indexer"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # A throwaway CI-only database: these credentials exist only in this container.
+      INDEXER_DATABASE_URL: postgresql+psycopg://indexer:indexer@localhost:5432/indexer
+      FOUNDRY_PROFILE: ci
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          # Keep in step with FOUNDRY_VERSION in scripts/cloud-setup.sh.
+          version: v1.8.7
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install Python dependencies, Slither and Chromium
+        run: |
+          pip install -r requirements.txt slither-analyzer==0.11.4
+          python -m playwright install --with-deps chromium
+
+      - name: Build
+        working-directory: contracts
+        run: forge build --sizes
+
+      # Fork tests skip themselves without MAINNET_RPC_URL; with the secret they run here
+      # and are counted in the pack. The URL is never printed.
+      - name: Foundry tests (ci profile, JSON)
+        working-directory: contracts
+        env:
+          MAINNET_RPC_URL: ${{ secrets.MAINNET_RPC_URL }}
+        run: |
+          mkdir -p ../results
+          forge test --json > ../results/forge-tests.json
+
+      - name: Coverage
+        working-directory: contracts
+        run: FOUNDRY_PROFILE=default forge coverage --report summary --no-match-path 'test/fork/*' | tee ../results/coverage.txt
+
+      - name: Gas snapshot check (unit tests)
+        working-directory: contracts
+        run: FOUNDRY_PROFILE=default forge snapshot --check --match-path 'test/unit/*' 2>&1 | tee ../results/gas-snapshot-check.txt
+
+      # Same policy as the CI gate: exit non-zero on High. --json writes every result.
+      - name: Slither (gated scope, JSON)
+        working-directory: contracts
+        run: |
+          forge build --build-info --skip './test/**' --skip './script/**'
+          slither . --ignore-compile --config-file slither.config.json --fail-high --json ../results/slither.json
+
+      - name: Python suites (Anvil + Postgres)
+        run: pytest --junitxml=results/junit-python.xml
+
+      - name: UI suite (Playwright)
+        run: pytest tests/ui --junitxml=results/junit-ui.xml --tracing retain-on-failure --output test-results
+
+      - name: Build the evidence pack
+        run: python scripts/evidence_pack.py --results results --out dist --version "${{ github.ref_name }}"
+
+      - name: Evidence summary in the job summary
+        run: cat dist/evidence-pack-*/EVIDENCE.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: evidence-pack
+          path: dist/evidence-pack-*.zip
+          retention-days: 90
+
+      - name: Upload Playwright traces of failed UI tests
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: test-results
+          retention-days: 14
+
+      - name: Attach the pack to the GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "${{ github.ref_name }}" dist/evidence-pack-*.zip
+          --title "${{ github.ref_name }}" --notes-file "$(ls -d dist/evidence-pack-*/)EVIDENCE.md"
+          --verify-tag
