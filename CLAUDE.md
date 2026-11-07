@@ -23,22 +23,24 @@ contracts/          Foundry project
   test/security/    exploit + regression tests
   test/fixtures/    DELIBERATELY VULNERABLE contracts (vault/, PR 5). Never deploy, never import from src/
   lib/              forge-std, openzeppelin-contracts (git submodules, pinned tags)
+ui/                 transfer page (PR 10): index.html + app.js, EIP-1193 only, no build step
 services/           Python services
   indexer/          reorg-aware indexer (PR 7): db (schema, Uint256), indexer, queries, CLI
   transfer_api/     transfer API (PR 8): FastAPI app, service (worker tick), nonces, db, CLI
 tests/              Python (3.12) suites against Anvil: integration/ (PR 6), indexing/ and
-                    reconciliation/ (PR 7), transfers/ (PR 8), load/ (PR 9); ui/ later
+                    reconciliation/ (PR 7), transfers/ (PR 8), load/ (PR 9), ui/ (PR 10)
+  ui/               Playwright suite (not in pytest.ini testpaths: needs a browser; ui.yml)
   load/             sut.py (system under test), locustfile.py, run_load.py (smoke|nightly),
                     profile_worker.py; results in load-results/ (gitignored)
   conftest.py       session Anvil + deployment, per-test evm_snapshot/evm_revert, indexer DB
   lib/              anvil, artifacts, chain, errors, clients (Token/Escrow), builders, eip712,
                     nonces, activity, indexing, reconcile, transfers, api_server,
-                    naive_indexer and naive_transfer (DELIBERATELY BROKEN)
+                    wallet (mock EIP-1193), naive_indexer and naive_transfer (DELIBERATELY BROKEN)
 requirements.txt    exact-pinned Python deps (web3 7.16.0); pytest.ini at the repo root
 docs/               plan.md, decisions.md, findings.md, slither-triage.md, performance-report.md
                     (+ performance/ evidence), test strategy, RTM, reports
 scripts/            cloud-setup.sh
-.github/workflows/  contracts.yml, integration.yml, nightly.yml (load test, 03:17 UTC)
+.github/workflows/  contracts.yml, integration.yml, ui.yml, nightly.yml (load test, 03:17 UTC)
 ```
 
 ## Setup
@@ -165,7 +167,12 @@ slither . --ignore-compile --config-file slither.config.json --fail-high
   transfer must be final, the API's total must equal what the hot wallet paid, and the
   indexer must reconcile. Locust runs in its own process (gevent). Report numbers from
   `run_load.py`, and keep before/after evidence in `docs/performance/`.
-- **Every test has `@pytest.mark.req("INT-xx")`** (or `IDX-xx`, `REC-xx`, `TAPI-xx`, `LOAD-xx`) (module-level `pytestmark` is fine).
+- **UI tests drive a real page through `MockWallet`** (`tests/lib/wallet.py`): the test
+  decides approve or reject, and asserts on three things: what the page shows, what it
+  asked the wallet for, and the chain state. Use exact role names (`exact=True`, F-28).
+  Run `.venv/bin/pytest tests/ui --tracing retain-on-failure`; the browser is Chromium from
+  playwright 1.63.0 (preinstalled in cloud sessions at `/opt/pw-browsers`).
+- **Every test has `@pytest.mark.req("INT-xx")`** (or `IDX-xx`, `REC-xx`, `TAPI-xx`, `LOAD-xx`, `UI-xx`) (module-level `pytestmark` is fine).
   It becomes an Allure `requirement` label for the RTM.
 - **Concurrency tests assert on chain state** (balances, nonces), not only on
   exceptions, since a node can drop a transaction without an error (F-11).

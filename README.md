@@ -67,6 +67,18 @@ TRANSFER_API_PRIVATE_KEY=0x... PYTHONPATH=services .venv/bin/python -m transfer_
   --rpc http://127.0.0.1:8545 --token 0x... --db sqlite:///transfer-api.db
 ```
 
+### UI tests (Playwright)
+
+`ui/` is a one-page transfer UI that talks only to an EIP-1193 wallet. `tests/ui/`
+drives it in Chromium through a scriptable mock wallet (approve or reject, recorded
+requests) against Anvil. Failed tests keep a trace:
+
+```bash
+.venv/bin/python -m playwright install chromium   # once, outside cloud sessions
+.venv/bin/pytest tests/ui --tracing retain-on-failure --output test-results
+.venv/bin/python -m playwright show-trace test-results/<test>/trace.zip
+```
+
 ### Load tests (Locust)
 
 `tests/load/run_load.py` starts the whole system (Anvil with 1-second blocks, the
