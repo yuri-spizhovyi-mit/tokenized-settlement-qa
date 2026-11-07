@@ -624,6 +624,73 @@ not (F-21).
 
 ---
 
+## TAPI-D8: Backpressure (503 + Retry-After) and bounded worker batches
+
+**Status:** Accepted (PR 9, from F-23)
+
+**Decision:**
+- When `max_backlog` transfers (default 500) are accepted but not yet final, `POST
+  /transfers` answers **503** with `Retry-After: 1` and stores nothing.
+- Replays of keys that already exist are still served while busy.
+- The limit is soft: requests racing at the limit can exceed it slightly, because
+  they count before they insert.
+- Each `tick()` submits at most `max_submit_per_tick` (default 25) transfers, then
+  tracks receipts and confirmations, so a long queue can't starve tracking.
+
+**Why:** the load run showed the API accepting 33 transfers/s while one hot wallet
+settled 4/s. Without a limit, every accepted request's wait grows with the queue, and
+"accepted" stops meaning "will settle soon". Refusing early, with a retry hint, keeps
+the promise honest. Idempotency (TAPI-D2) is what makes retrying safe: the client
+resends the same key, and it can never create a duplicate.
+
+**Tests:** TAPI-17 (503, nothing stored, replay still 200, the same key accepted
+later, paid once), TAPI-18 (one tick signs exactly the 3 oldest of 7), LOAD-01..03
+(under load).
+
+---
+
+## LOAD-D1: The load rig: two processes, real block times, correctness gates
+
+**Status:** Accepted (PR 9)
+
+**Decision:**
+- `tests/load/sut.py` runs the system under test in one process: Anvil, the transfer
+  API with its background worker, the indexer loop, and a 0.5 s sampler.
+- Locust runs in a second process. Its gevent monkey-patching would turn the API's
+  threads into greenlets.
+- Setup uses automine. The load phase uses 1-second interval mining, as a real chain
+  produces blocks on a clock, not per transaction.
+- After the load, the SUT **drains** and checks correctness: every accepted transfer
+  is final, the API's confirmed total equals what the hot wallet paid on chain, and
+  the indexer reconciles with the chain at its tip.
+- `run_load.py` exits non-zero if any check fails.
+
+**Why:** throughput numbers from a system that loses or double-counts transfers under
+load are worthless. The checks make the load test a correctness test at scale too.
+Per-user accounts for direct RPC writers keep the load generator's own nonce
+handling out of the measurement (F-11).
+
+**Profiles:**
+- `smoke`: 8 users, 15 s, in every PR's pytest run (LOAD-01..03).
+- `nightly`: 40 users, 180 s, in `.github/workflows/nightly.yml`, which also writes the
+  report to the job summary and uploads the artifacts.
+
+---
+
+## LOAD-D2: The nightly job fails on correctness, not on speed
+
+**Status:** Accepted (PR 9)
+
+**Decision:** the nightly job fails when a correctness check fails. Throughput and
+latency are reported but not gated.
+
+**Why:** shared CI runners vary by a factor of two from run to run. A latency gate
+would flap and teach everyone to ignore the job. Lost or unconfirmed transfers are
+not noise. A throughput regression shows up as backlog that won't drain, which the
+drain check does catch.
+
+---
+
 ## Open
 
 - None. Issue #4 is recorded above as TOK-D1.

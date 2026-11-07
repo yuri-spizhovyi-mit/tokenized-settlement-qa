@@ -21,3 +21,6 @@ allure-report/
 .env
 .env.*
 !.env.example
+
+# Load test output (tests/load/run_load.py)
+load-results/

@@ -62,6 +62,10 @@ class InvalidRequest(ValueError):
     """The request itself is malformed (address, amount, key)."""
 
 
+class Busy(Exception):
+    """Backpressure: the backlog of unsettled transfers is at its limit (TAPI-D8)."""
+
+
 class Rejected(Exception):
     """The transfer would revert right now; nothing was stored."""
 
@@ -135,6 +139,8 @@ class TransferService:
         gas_limit: int = 100_000,
         tip: int = 1 * GWEI,
         nonces: NonceManager | None = None,
+        max_submit_per_tick: int = 25,
+        max_backlog: int | None = 500,
     ):
         self.w3 = w3
         self.engine = engine
@@ -148,7 +154,10 @@ class TransferService:
         self.nonces = nonces or NonceManager(w3, wallet.address)
         self.errors = ErrorDecoder(token.abi)
         self.gap_fills: list[int] = []  # nonces filled with a 0-value self-transfer
+        self.max_submit_per_tick = max_submit_per_tick  # F-23: bounded, so tracking interleaves
+        self.max_backlog = max_backlog  # TAPI-D8: None = unbounded
         self._tick_lock = threading.Lock()
+        self._view = threading.local()  # the worker's per-tick snapshot of the chain (F-24)
 
     # ==== API side ===================================================================
 
@@ -169,7 +178,10 @@ class TransferService:
 
         existing = self._by_key(idempotency_key)
         if existing is not None:
-            return self._replay(existing, digest), False
+            return self._replay(existing, digest), False  # replays are served even when busy
+
+        if self.max_backlog is not None and self.backlog() >= self.max_backlog:
+            raise Busy(f"{self.max_backlog} transfers are waiting to settle; retry later")
 
         try:  # would it succeed right now, from the hot wallet?
             self.token.functions.transfer(recipient, value).call({"from": self.wallet.address})
@@ -190,6 +202,13 @@ class TransferService:
             # constraint decided. Answer as a replay of that one.
             return self._replay(self._by_key(idempotency_key), digest), False
         return self.get(transfer_id), True
+
+    def backlog(self) -> int:
+        """Transfers accepted but not yet final (confirmed or failed)."""
+        with self.engine.connect() as conn:
+            return conn.execute(select(func.count()).select_from(transfers).where(
+                transfers.c.status.not_in([Status.CONFIRMED.value, Status.FAILED.value])
+            )).scalar_one()
 
     def _replay(self, row: Any, digest: str) -> dict:
         if row.request_hash != digest:
@@ -229,24 +248,43 @@ class TransferService:
     def tick(self) -> None:
         """One pass of the worker: resume, fill nonce gaps, submit, track, confirm."""
         with self._tick_lock:
-            resumed = [self._resume_signed(t) for t in self._rows(Status.SIGNED)]
-            if resumed:
-                self.nonces.resync()
-            self._fill_gaps()
-            for t in self._rows(Status.ACCEPTED):
-                self._submit(t)
-            latest = self.w3.eth.block_number
-            for t in self._rows(Status.SUBMITTED):
-                self._track(t, latest)
-            for t in self._rows(Status.MINED):
-                if latest - t.block_number >= self.confirmations:
-                    self._set(t.id, Status.CONFIRMED)
+            try:
+                self._refresh_view()
+                resumed = [self._resume_signed(t) for t in self._rows(Status.SIGNED)]
+                if resumed:
+                    self.nonces.resync()
+                self._fill_gaps()
+                # A bounded batch: a tick that submitted the whole backlog first would track
+                # no receipts until it finished, and confirmations would stall (F-23).
+                for t in self._rows(Status.ACCEPTED, limit=self.max_submit_per_tick):
+                    self._submit(t)
+                self._refresh_view()
+                latest = self._view.block
+                for t in self._rows(Status.SUBMITTED):
+                    self._track(t, latest)
+                for t in self._rows(Status.MINED):
+                    if latest - t.block_number >= self.confirmations:
+                        self._set(t.id, Status.CONFIRMED)
+            finally:
+                self._view.block = None  # outside a tick, read the chain live
 
-    def _rows(self, status: Status) -> list[Any]:
+    def _refresh_view(self) -> None:
+        """One read of the head per tick phase instead of one per bookkeeping row: block
+        number and base fee were 6 of the 8 JSON-RPC calls per transfer (F-24)."""
+        latest = self.w3.eth.get_block("latest")
+        self._view.block = latest["number"]
+        self._view.base_fee = latest["baseFeePerGas"]
+
+    def _block_number(self) -> int:
+        cached = getattr(self._view, "block", None)
+        return cached if cached is not None else self.w3.eth.block_number
+
+    def _rows(self, status: Status, limit: int | None = None) -> list[Any]:
+        query = select(transfers).where(transfers.c.status == status.value).order_by(transfers.c.created_seq)
+        if limit is not None:
+            query = query.limit(limit)
         with self.engine.connect() as conn:
-            return conn.execute(
-                select(transfers).where(transfers.c.status == status.value).order_by(transfers.c.created_seq)
-            ).all()
+            return conn.execute(query).all()
 
     # ---- submit ----------------------------------------------------------------------
 
@@ -276,6 +314,8 @@ class TransferService:
         # Never used: the node refused it. Re-sync, so the next send reuses this nonce
         # (or jumps past one someone else used) instead of leaving a gap (issue #12).
         self.nonces.resync()
+        if getattr(self._view, "block", None) is not None:
+            self._refresh_view()  # a refusal may mean the base fee moved
         self._set(t.id, Status.ACCEPTED, detail=f"{result.outcome.value}: {result.message}; nonce re-synced")
         if result.outcome is Broadcast.NONCE_TOO_LOW and retry:
             self._submit(self._row(t.id), retry_on_nonce_too_low=False)
@@ -305,11 +345,13 @@ class TransferService:
             "tx_hash": signed.hash.to_0x_hex(),
             "raw_tx": signed.raw_transaction.to_0x_hex(),
             "max_fee_per_gas": max_fee,
-            "sent_at_block": self.w3.eth.block_number,
+            "sent_at_block": self._block_number(),
         }
 
     def _fee(self) -> int:
-        base = self.w3.eth.get_block("latest")["baseFeePerGas"]
+        base = getattr(self._view, "base_fee", None) if getattr(self._view, "block", None) is not None else None
+        if base is None:
+            base = self.w3.eth.get_block("latest")["baseFeePerGas"]
         return 2 * base + self.tip
 
     def _broadcast(self, raw_tx: str) -> SendResult:
@@ -437,7 +479,7 @@ class TransferService:
         ).scalar_one()
         conn.execute(insert(transitions).values(
             transfer_id=transfer_id, seq=seq + 1, status=status.value,
-            block_number=self.w3.eth.block_number, detail=detail,
+            block_number=self._block_number(), detail=detail,
         ))
 
     # ---- test hooks (crash simulation) -------------------------------------------------

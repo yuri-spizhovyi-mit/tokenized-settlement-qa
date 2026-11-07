@@ -27,15 +27,18 @@ services/           Python services
   indexer/          reorg-aware indexer (PR 7): db (schema, Uint256), indexer, queries, CLI
   transfer_api/     transfer API (PR 8): FastAPI app, service (worker tick), nonces, db, CLI
 tests/              Python (3.12) suites against Anvil: integration/ (PR 6), indexing/ and
-                    reconciliation/ (PR 7), transfers/ (PR 8); ui/, load/ later
+                    reconciliation/ (PR 7), transfers/ (PR 8), load/ (PR 9); ui/ later
+  load/             sut.py (system under test), locustfile.py, run_load.py (smoke|nightly),
+                    profile_worker.py; results in load-results/ (gitignored)
   conftest.py       session Anvil + deployment, per-test evm_snapshot/evm_revert, indexer DB
   lib/              anvil, artifacts, chain, errors, clients (Token/Escrow), builders, eip712,
                     nonces, activity, indexing, reconcile, transfers, api_server,
                     naive_indexer and naive_transfer (DELIBERATELY BROKEN)
 requirements.txt    exact-pinned Python deps (web3 7.16.0); pytest.ini at the repo root
-docs/               plan.md, decisions.md, findings.md, slither-triage.md, test strategy, RTM, reports
+docs/               plan.md, decisions.md, findings.md, slither-triage.md, performance-report.md
+                    (+ performance/ evidence), test strategy, RTM, reports
 scripts/            cloud-setup.sh
-.github/workflows/  contracts.yml, integration.yml (more workflows land with later PRs)
+.github/workflows/  contracts.yml, integration.yml, nightly.yml (load test, 03:17 UTC)
 ```
 
 ## Setup
@@ -158,7 +161,11 @@ slither . --ignore-compile --config-file slither.config.json --fail-high
   every status change happens when the test says. Crashes are simulated with the
   `_after_write_ahead` / `_after_broadcast` hooks. Test module basenames must be unique
   across `tests/` (pytest's default import mode).
-- **Every test has `@pytest.mark.req("INT-xx")`** (or `IDX-xx`, `REC-xx`, `TAPI-xx`) (module-level `pytestmark` is fine).
+- **Load tests gate on correctness, not speed** (LOAD-D2): after the load, every accepted
+  transfer must be final, the API's total must equal what the hot wallet paid, and the
+  indexer must reconcile. Locust runs in its own process (gevent). Report numbers from
+  `run_load.py`, and keep before/after evidence in `docs/performance/`.
+- **Every test has `@pytest.mark.req("INT-xx")`** (or `IDX-xx`, `REC-xx`, `TAPI-xx`, `LOAD-xx`) (module-level `pytestmark` is fine).
   It becomes an Allure `requirement` label for the RTM.
 - **Concurrency tests assert on chain state** (balances, nonces), not only on
   exceptions, since a node can drop a transaction without an error (F-11).

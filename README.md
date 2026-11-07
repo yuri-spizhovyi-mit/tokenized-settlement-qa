@@ -46,7 +46,7 @@ You need Python **3.12**, plus Foundry v1.8.7 (which provides `anvil`) on your `
 python3.12 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 (cd contracts && forge build)
-.venv/bin/pytest                      # integration, indexer, reconciliation, transfer API: ~80 s
+.venv/bin/pytest                      # all Python suites incl. the load smoke run: ~2 min
 .venv/bin/pytest tests/integration    # one suite
 .venv/bin/pytest -k signed_release    # one group
 ```
@@ -67,6 +67,18 @@ TRANSFER_API_PRIVATE_KEY=0x... PYTHONPATH=services .venv/bin/python -m transfer_
   --rpc http://127.0.0.1:8545 --token 0x... --db sqlite:///transfer-api.db
 ```
 
+### Load tests (Locust)
+
+`tests/load/run_load.py` starts the whole system (Anvil with 1-second blocks, the
+transfer API, the indexer), drives it with Locust, then drains and checks that nothing
+was lost. It writes `load-results/report.md`; see `docs/performance-report.md`.
+
+```bash
+.venv/bin/python tests/load/run_load.py --profile smoke     # 8 users, 15 s (also in pytest)
+.venv/bin/python tests/load/run_load.py --profile nightly   # 40 users, 3 min (nightly CI job)
+.venv/bin/python tests/load/profile_worker.py               # where the worker's time goes
+```
+
 The indexer itself (`services/indexer/`) also runs on its own against any node:
 
 ```bash
@@ -81,7 +93,7 @@ For the Allure report locally (needs Java 17+ and Node):
 npx allure-commandline@2.46.1 serve allure-results
 ```
 
-CI runs all four suites in `.github/workflows/integration.yml` (job
+CI runs all of them in `.github/workflows/integration.yml` (job
 `integration (pytest + anvil)`, with a Postgres 16 service container) and publishes the report to GitHub Pages from `main`.
 
 ## Cloud sessions

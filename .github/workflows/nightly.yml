@@ -1,0 +1,77 @@
+name: nightly
+
+# Long runs that don't belong on every PR (CLAUDE.md: "long nightly runs execute in CI
+# only"). The PR-level smoke run of the same rig is in integration.yml (LOAD-01..03).
+on:
+  schedule:
+    - cron: "17 3 * * *"   # 03:17 UTC daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  load:
+    name: load test (locust, nightly profile)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: indexer
+          POSTGRES_PASSWORD: indexer
+          POSTGRES_DB: indexer
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U indexer"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # A throwaway CI-only database: these credentials exist only in this container.
+      INDEXER_DATABASE_URL: postgresql+psycopg://indexer:indexer@localhost:5432/indexer
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          # Keep in step with FOUNDRY_VERSION in scripts/cloud-setup.sh.
+          version: v1.8.7
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build contracts
+        working-directory: contracts
+        run: forge build
+
+      # Exits non-zero if a correctness check failed under load (lost or unconfirmed
+      # transfers, totals that don't match the chain, an indexer that doesn't reconcile).
+      - name: Load test (40 users, 3 minutes)
+        run: python tests/load/run_load.py --profile nightly --out load-results
+
+      - name: Report in the job summary
+        if: always()
+        run: cat load-results/report.md >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-results
+          path: load-results
+          retention-days: 30
