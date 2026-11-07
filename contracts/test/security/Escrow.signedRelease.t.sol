@@ -122,6 +122,23 @@ contract EscrowSignedReleaseTest is EscrowBase {
         _assertDeal(id, payer, payee, AMOUNT, deadline, Escrow.State.Funded);
     }
 
+    /// @notice SEC-12: the published DOMAIN_SEPARATOR is exactly the EIP-712 domain the
+    ///         signatures are checked against: name "Escrow", version "1", this chain,
+    ///         this contract. After a chain-id change it is recomputed for the new
+    ///         chain, so off-chain signers reading it can't sign for a stale domain.
+    ///         (Found uncovered by `forge coverage` while building the evidence pack, F-30.)
+    function test_DomainSeparator_MatchesEip712DomainAndFollowsChainId() public {
+        // Read once, before vm.chainId; later checks use these values, never block.chainid.
+        // forge-lint: disable-next-line(environment-read-across-mutation)
+        uint256 original = block.chainid;
+        uint256 forked = original + 1;
+        assertEq(escrow.DOMAIN_SEPARATOR(), _domain(address(escrow), original));
+
+        vm.chainId(forked);
+        assertEq(escrow.DOMAIN_SEPARATOR(), _domain(address(escrow), forked));
+        assertTrue(escrow.DOMAIN_SEPARATOR() != _domain(address(escrow), original));
+    }
+
     /// @notice SEC-12 (replay 2/5, other direction): after a chain split the same
     ///         contract sees a new chain id; signatures for the old id stop working.
     function test_RevertWhen_ChainIdChangesAfterSigning() public {

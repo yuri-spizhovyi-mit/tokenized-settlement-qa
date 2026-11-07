@@ -1,0 +1,103 @@
+id,area,risk,requirement
+TOK-01,Token,medium,"On deployment the admin holds DEFAULT_ADMIN_ROLE only; no supply exists, nothing is paused, and every role is administered by the default admin."
+TOK-02,Token,high,Only MINTER_ROLE can mint and burn.
+TOK-03,Token,high,Only PAUSER_ROLE can pause and unpause.
+TOK-04,Token,high,"Only ALLOWLIST_ROLE can change the allowlist, and only DEFAULT_ADMIN_ROLE can grant or revoke roles: governance and compliance are separate duties."
+TOK-05,Token,high,"Every balance movement requires the sender, the recipient and, for transferFrom, the spender to be allowlisted; transferFrom is no bypass."
+TOK-06,Token,high,Revoking a role or delisting an account takes effect immediately (the very next call).
+TOK-07,Token,high,"Pause stops every balance movement (transfer, transferFrom, mint, burn); admin and allowlist functions keep working."
+ESC-01,Escrow,medium,"Escrow is wired to its token, arbiter and admin at deployment, and refuses a zero token, arbiter or admin."
+ESC-02,Escrow,high,"open pulls exactly the amount from the payer into escrow, records every field, assigns sequential ids and emits Opened."
+ESC-03,Escrow,high,"open rejects a zero amount, an unpayable payee and a deadline that is not in the future (ESC-D4, ESC-D6)."
+ESC-04,Escrow,high,"Only the arbiter can release a Funded deal; release pays the payee the full amount, marks it Released and emits Released, also after the deadline."
+ESC-05,Escrow,high,"From the deadline second on, anyone can refund a Funded deal, and the money always goes to the payer, never to the caller (ESC-D1, ESC-D2)."
+ESC-06,Escrow,high,"A deal settles once: Released and Refunded are terminal; any second release or refund reverts."
+ESC-07,Escrow,medium,An id that was never opened can be neither released nor refunded.
+ESC-08,Escrow,high,"The escrow defers to the token's allowlist: an unlisted escrow or payer cannot open, a delisted escrow stops payouts, and funds for a delisted payee are recoverable by refund."
+ESC-09,Escrow,high,"While the token is paused, open, release and refund all revert; after unpause they succeed with funds intact."
+PROP-01,Properties,high,"For any valid amount and deadline, open records exactly that amount and deadline."
+PROP-02,Properties,high,"For any amount, open then release moves exactly that amount from payer to payee."
+PROP-03,Properties,high,"No address other than the arbiter can release, whatever it is."
+PROP-04,Properties,high,"No caller can refund at any second before the deadline."
+PROP-05,Properties,high,"A transfer conserves totalSupply and moves exactly the amount between the two parties."
+PROP-06,Properties,high,"No address without the matching role can mint, pause or change the allowlist."
+PROP-07,Properties,high,"Invariant: the escrow's token balance equals the sum of all Funded deals."
+PROP-08,Properties,high,"Invariant: payees received exactly what was released, and payers got back exactly what was refunded."
+PROP-09,Properties,high,"Invariant: tracked balances always sum to totalSupply; no value appears outside mint."
+PROP-10,Properties,high,"Invariant: a settled deal never changes state again."
+PROP-11,Properties,high,"Against real mainnet USDC (fork), escrow moves amounts exactly: 1 base unit, six-decimal amounts and amounts above 2^64."
+PROP-12,Properties,high,"Against real USDC, Circle's blacklist is respected: a blacklisted payer, payee or escrow blocks the affected flows with USDC's own revert."
+SEC-01,Security,high,"The planted re-entrancy in VulnerableVault is exploitable: an attacker drains more than its stake (proves the exploit test can see the bug)."
+SEC-02,Security,high,The checks-effects-interactions fix stops the re-entrancy.
+SEC-03,Security,high,"The nonReentrant fix stops the re-entrancy, even with the vulnerable call order kept."
+SEC-04,Security,medium,Both fixed vaults still serve honest withdrawals.
+SEC-05,Security,high,"Admin renounce or handover can never happen by accident: it needs a scheduled two-step transfer after a two-day delay (issue #3)."
+SEC-06,Security,high,"An admin handover moves power only when the new admin accepts after the delay, not before and not at the exact schedule second."
+SEC-07,Security,high,"Only the escrow admin can rotate the arbiter, never to the zero address, and rotation emits ArbiterChanged."
+SEC-08,Security,high,"After rotation the old arbiter can no longer release, directly or with old signatures (F-07)."
+SEC-09,Security,high,"Rotation doesn't disturb in-flight deals, and the escrow admin cannot release deals itself."
+SEC-10,Security,medium,A release signed by the arbiter can be submitted by anyone and pays the payee.
+SEC-11,Security,high,The same signed release cannot be submitted twice (nonce consumed).
+SEC-12,Security,high,"A signature from another chain, or made before a chain-id change, is rejected (EIP-712 domain)."
+SEC-13,Security,high,A signature made for another escrow contract is rejected.
+SEC-14,Security,high,"An expired signature is rejected, and a submitter cannot change the signed deadline."
+SEC-15,Security,high,A signature for one deal cannot be reused for another.
+SEC-16,Security,high,"Signatures from a non-arbiter, a rotated-out arbiter or a malleated (high-s) signature are rejected."
+INT-01,Integration,medium,"What is deployed is what forge built: runtime code matches the artifact, and the escrow is wired to the token and arbiter."
+INT-02,Integration,high,"Over JSON-RPC, open moves exactly the amount, records the deal and emits Opened and Transfer from the right contracts."
+INT-03,Integration,high,"Over JSON-RPC, the arbiter's release pays the payee in full and marks the deal Released."
+INT-04,Integration,high,"Over JSON-RPC, a refund at the deadline pays the payer, never the caller."
+INT-05,Integration,medium,"Custom errors are decoded from revert data and asserted by name and arguments, including errors bubbled from the token through the escrow."
+INT-06,Integration,high,"An EIP-712 release signed in Python verifies on chain, can be relayed by a third account, and cannot be replayed."
+INT-07,Integration,high,"The EIP-712 typehash and domain separator computed in Python match the contract's."
+INT-08,Integration,high,"Deadline boundaries hold to the exact second on a real node (deadline - 1 refused, deadline accepted)."
+INT-09,Integration,medium,"A reverted transaction is distinguished from an included one: status 0 receipts are detected and decoded (F-13)."
+INT-10,Integration,high,"Concurrent sends from one account get distinct nonces and all land; a naive nonce strategy loses transfers (F-11)."
+INT-11,Integration,low,"Per-test evm_snapshot/evm_revert restores balances, deals and account nonces."
+IDX-01,Indexer,high,"After a reorg (snapshot/revert), the indexer drops the abandoned block's events and indexes the replacement; the naive indexer must fail (F-15)."
+IDX-02,Indexer,high,"A same-height reorg (anvil_reorg) with no new block is detected by the tip check, also below a confirmation depth (F-18)."
+IDX-03,Indexer,high,"The naive indexer's failure is pinned: it keeps the abandoned transfer and misses the replacement."
+IDX-04,Indexer,high,"A restart mid-sync loses no event and duplicates none; re-syncing with no new blocks changes nothing."
+IDX-05,Indexer,high,"A crash inside a block's transaction commits nothing of that block, and the restart stores its events exactly once."
+IDX-06,Indexer,medium,"Events in one block are stored and replayed in log_index order, across contracts."
+IDX-07,Indexer,high,"Amounts are exact integers end to end, up to 2^256 - 1; SQLite NUMERIC is never used for them (F-16)."
+IDX-08,Indexer,medium,A reorg shallower than the confirmation depth never reaches the database.
+IDX-09,Indexer,medium,A reorg below the start block stops the indexer loudly instead of rebuilding from a guess.
+REC-01,Reconciliation,high,Every holder's balanceOf at a pinned block hash equals the indexed balance.
+REC-02,Reconciliation,high,"The sum of indexed balances, and minted minus burned, both equal totalSupply."
+REC-03,Reconciliation,high,The escrow's balance equals the sum of deals the database says are Funded.
+REC-04,Reconciliation,medium,"Reconciliation is pinned to a confirmed block hash, so activity after the pin doesn't disturb it."
+REC-05,Reconciliation,high,"Reconciliation detects a one-unit discrepancy, per holder, even when totals still agree."
+REC-06,Reconciliation,high,"After a reorg the naive indexer fails reconciliation and the real one passes."
+TAPI-01,Transfer API,medium,"A transfer moves accepted, signed, submitted, mined, confirmed, one step per worker pass, and nothing moves at accept."
+TAPI-02,Transfer API,high,"A transfer that reverts after being accepted is reported failed with the decoded error; no tokens move."
+TAPI-03,Transfer API,high,"A request that would revert now is refused with 422 and the decoded error; nothing is stored and the key stays free."
+TAPI-04,Transfer API,medium,"Malformed requests are 422: amounts are decimal strings of base units (no JSON numbers), within 1..2^256-1; 2^53+1 round-trips exactly."
+TAPI-05,Transfer API,high,"Replaying a request with the same Idempotency-Key returns the same transfer; it is paid once."
+TAPI-06,Transfer API,high,Reusing an Idempotency-Key for a different request is 409 and creates nothing.
+TAPI-07,Transfer API,high,"Ten concurrent requests with one key create one transfer and one payment (one 202, nine 200)."
+TAPI-08,Transfer API,high,"Ten concurrent distinct requests all confirm with consecutive nonces, and the payee receives the exact sum."
+TAPI-09,Transfer API,high,"A transaction stuck after a fee spike (dropped by the node) is replaced at the same nonce and confirmed once (F-20)."
+TAPI-10,Transfer API,high,"After a crash between signing and broadcast, the restart sends the stored signed bytes exactly once."
+TAPI-11,Transfer API,high,"After a crash between broadcast and recording it, the restart recognises its own transaction and pays once; re-signing would pay twice (F-21)."
+TAPI-12,Transfer API,medium,"A server restart keeps accepted transfers; replays find them and the new worker sends them once."
+TAPI-13,Transfer API,high,"A refused send cannot stall later transactions: the nonce manager re-syncs (issue #12, F-19)."
+TAPI-14,Transfer API,medium,"A send from the hot wallet's key outside the service is recovered by re-sync and retry."
+TAPI-15,Transfer API,medium,"A send refused mid-tick leaves no nonce gap when the manager re-syncs."
+TAPI-16,Transfer API,high,"A nonce lost without any error is filled with a 0-value self-transfer, so the transfers behind it execute."
+TAPI-17,Transfer API,medium,"When the backlog is full the API answers 503 + Retry-After and stores nothing; the same key succeeds later and pays once."
+TAPI-18,Transfer API,medium,"Each worker tick submits a bounded batch, so tracking and confirmations are never starved (F-23)."
+LOAD-01,Load,medium,"Under concurrent load all four user types (API read/write, RPC read/write) are served without request failures."
+LOAD-02,Load,high,"After load and drain, every accepted transfer is confirmed and the API's confirmed total equals what the hot wallet paid on chain."
+LOAD-03,Load,high,"Under load the indexer stays within 3 blocks of the head and reconciles with the chain afterwards."
+UI-01,UI,medium,"Connecting a wallet shows the account and its exact balance."
+UI-02,UI,high,"A transfer is simulated, signed once, mined and reported as confirmed; balances move by exactly the amount."
+UI-03,UI,high,"A wallet rejection (4001) reports that nothing was sent; no transaction exists, balances are unchanged and the form keeps its values."
+UI-04,UI,high,"Amounts at or above the large-value threshold need a second confirmation showing the exact amount and recipient; the exact base units are sent (2^53+1)."
+UI-05,UI,medium,Invalid amounts and recipients are refused with specific messages before the wallet is asked.
+UI-06,UI,high,"A transfer that would revert is explained and never signed; one that reverts after simulation is shown as failed on chain, never confirmed."
+UI-07,UI,high,"On the wrong network the page refuses to offer a transfer."
+UI-08,UI,high,"A double click or two same-tick submissions produce exactly one transaction (F-27)."
+UI-09,UI,medium,The page's function and error selectors match the compiled contract.
+UI-10,UI,high,"Amounts round-trip exactly through the page's BigInt parsing and formatting, up to 2^256 - 1."
+UI-11,UI,low,A failed UI test leaves a Playwright trace with the page's actions and DOM snapshots.

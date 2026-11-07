@@ -800,6 +800,67 @@ transaction).
 
 ---
 
+## PROC-D1: The traceability matrix is generated from the tests, and gated in CI
+
+**Status:** Accepted (PR 11)
+
+**Decision:**
+- `docs/requirements.csv` is the catalogue: id, area, risk and one sentence per
+  requirement. It is the only hand-kept list.
+- `scripts/rtm.py` builds `docs/rtm.md` and `docs/rtm.csv` from the tests themselves:
+  Solidity NatSpec IDs on the test function, inheriting the contract's if it has none,
+  and `@pytest.mark.req`.
+- The CI job `traceability (rtm)` fails on an untested requirement, an uncatalogued ID,
+  or a stale `rtm.csv`.
+
+**Why:** a hand-maintained matrix drifts on the first rename. Deriving it from the code
+means "requirement → test" is checked on every PR, at the cost of one convention: tag
+the test.
+
+**Tests:** the three negative checks in F-29.
+
+---
+
+## PROC-D2: The evidence pack is built only for a passing release
+
+**Status:** Accepted (PR 11)
+
+**Decision:** `.github/workflows/release.yml` runs every suite at release settings
+(Foundry `ci` profile, Postgres, Chromium), coverage, the gas-snapshot check and Slither
+(JSON). `scripts/evidence_pack.py` then packs:
+- the raw results;
+- the process documents;
+- an `EVIDENCE.md` verdict;
+- `SHA256SUMS`.
+
+A tag `v*` attaches the zip to a GitHub release. `workflow_dispatch` keeps it as an
+artifact. The script **refuses** to build on any of these:
+- a failed test;
+- production coverage below 100%;
+- a High Slither finding;
+- an RTM gap;
+- a missing result file.
+
+**Why:** an evidence pack that can contain a red result would need someone to read it
+to know whether the release is good. One that can only exist for a green run is the
+verdict.
+
+---
+
+## PROC-D3: UAT scripts are for people, and each names its automated twin
+
+**Status:** Accepted (PR 11)
+
+**Decision:** `docs/uat-scripts.md` holds 9 step/expected-result scripts in a business
+user's words: transfers, rejection, large value, compliance, escrow, month-end
+reconciliation. Each names the automated test of the same path, and results are
+signed off per release.
+
+**Why:** automated tests prove behaviour; UAT proves the behaviour makes sense to the
+person who has to use it. Naming the twin keeps the two from drifting.
+
+---
+
 ## Open
 
 - None. Issue #4 is recorded above as TOK-D1.

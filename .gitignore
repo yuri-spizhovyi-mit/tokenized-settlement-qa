@@ -27,3 +27,7 @@ load-results/
 
 # Playwright traces and screenshots of failed UI tests
 test-results/
+
+# Evidence pack build output (scripts/evidence_pack.py)
+dist/
+/results/

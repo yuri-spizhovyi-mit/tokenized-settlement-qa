@@ -31,6 +31,8 @@ sequence or test output) and the outcome.
 | F-23 | nightly load run (PR 9) | the worker submits the whole backlog before tracking anything; the API accepts without limit; confirmations stall | bounded batch per tick; 503 backpressure; 4.0 → 12.9 confirmed/s |
 | F-24 | `profile_worker.py` | 6 of 8 JSON-RPC calls per transfer are bookkeeping reads of the head | one chain snapshot per tick phase; 8.0 → 2.1 calls |
 | F-25 | load-run sampler | the indexer's full-balance query grows with the event count: 0.7 → 162 ms over 15k events | reported, not fixed (IDX-D4 revisit; performance-report.md) |
+| F-29 | first RTM run (PR 11) | the RTM parser missed the NatSpec shorthand `TOK-02/03/04`: TOK-03 looked untested | shorthand expanded; three negative checks prove the RTM gate fails when it should |
+| F-30 | `forge coverage` for the evidence pack | `Escrow.DOMAIN_SEPARATOR()` was never called by a Foundry test (covered only from Python, INT-07) | unit test added under SEC-12; production contracts 100% on all four coverage measures |
 | F-27 | mutation check of the UI suite | the double-click test passed with the in-flight guard deleted: a test gap | same-tick double-submit test added; all 5 mutants killed |
 | F-28 | first UI test run | `get_by_role("button", name="Send")` also matched "Yes, send it" (the large-value confirm button) | exact role names; Playwright's strict mode caught it |
 | F-26 | first reading of the load report | two harness metric bugs: start-up catch-up reported as 52-block indexer lag; 503s counted as accepted transfers | warm-up excluded, created transfers counted; both runs re-rendered |
@@ -722,3 +724,45 @@ Playwright's strict mode refused the ambiguous locator, and the test failed loud
 Without strict mode, a test meaning to press Send could have *confirmed a large
 transfer* instead. In a payments UI, the wrong button is the expensive one. Every
 Send locator now uses `exact=True`.
+
+## F-29: the traceability check nearly reported a false gap
+
+**Found by:** the first run of `scripts/rtm.py`. 101 requirement IDs were linked to
+tests. **TOK-03** ("only PAUSER_ROLE can pause and unpause") appeared only in a
+contract-level comment.
+
+The role-matrix test *does* cover TOK-03, by calling pause and unpause as every role.
+Its NatSpec says `TOK-02/03/04`, and the parser read only `TOK-02` out of that
+shorthand. A matrix built on that would have reported a coverage gap that doesn't exist
+(and missed a real one if the shorthand had been the only mention of an untested ID).
+
+**Fix:** the extractor expands `PREFIX-NN/NN/NN`. A search for every other notation
+(`..`, `to`, ranges) found ranges only in Python module docstrings, which the
+generator ignores: Python links come from `@pytest.mark.req`, never from prose.
+Result: 102 of 102 requirements traced.
+
+**The gate is proven to bite**, three ways:
+- a catalogued requirement no test cites → exit 1;
+- a test citing an ID missing from the catalogue → exit 1;
+- a stale `docs/rtm.csv` → exit 1.
+
+## F-30: `DOMAIN_SEPARATOR()` was invisible to Solidity coverage
+
+**Found by:** `forge coverage` while building the evidence pack. `src/Escrow.sol` was at
+95.83% of lines and **88.89% of functions (8/9)**. The uncovered function was
+`DOMAIN_SEPARATOR()`, lines 164–165.
+
+It *was* tested, from Python: INT-07 compares it with an EIP-712 domain computed
+independently. But a coverage report per tool can't see across tools, and an
+off-chain signer depends on this exact value.
+
+**Fix:** `test_DomainSeparator_MatchesEip712DomainAndFollowsChainId` (SEC-12) checks
+it against the domain built from name "Escrow", version "1", the chain and the
+contract, and checks that it follows a chain-id change. Production contracts are now at
+**100% lines, statements, branches and functions**, and the evidence pack refuses to
+build below that.
+
+forge-lint flagged the test's read of `block.chainid` before `vm.chainId`
+(`environment-read-across-mutation`). The read is deliberate: the value is captured
+once, before the change, and never re-read. The suppression says so on the line
+above it.
