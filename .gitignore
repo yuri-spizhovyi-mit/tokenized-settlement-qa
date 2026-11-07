@@ -24,3 +24,6 @@ allure-report/
 
 # Load test output (tests/load/run_load.py)
 load-results/
+
+# Playwright traces and screenshots of failed UI tests
+test-results/

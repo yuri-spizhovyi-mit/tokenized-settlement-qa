@@ -21,3 +21,7 @@ httpx==0.28.1
 # Load tests (PR 9). gevent comes with Locust; pinned so CI and local runs match.
 locust==2.47.0
 gevent==26.9.0
+# UI tests (PR 10). playwright is held at 1.63.0: its Chromium build (1243) is the one
+# preinstalled in cloud sessions, and CI installs the same build with `playwright install`.
+playwright==1.63.0
+pytest-playwright==0.10.0

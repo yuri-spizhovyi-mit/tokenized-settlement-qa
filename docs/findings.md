@@ -31,6 +31,8 @@ sequence or test output) and the outcome.
 | F-23 | nightly load run (PR 9) | the worker submits the whole backlog before tracking anything; the API accepts without limit; confirmations stall | bounded batch per tick; 503 backpressure; 4.0 → 12.9 confirmed/s |
 | F-24 | `profile_worker.py` | 6 of 8 JSON-RPC calls per transfer are bookkeeping reads of the head | one chain snapshot per tick phase; 8.0 → 2.1 calls |
 | F-25 | load-run sampler | the indexer's full-balance query grows with the event count: 0.7 → 162 ms over 15k events | reported, not fixed (IDX-D4 revisit; performance-report.md) |
+| F-27 | mutation check of the UI suite | the double-click test passed with the in-flight guard deleted: a test gap | same-tick double-submit test added; all 5 mutants killed |
+| F-28 | first UI test run | `get_by_role("button", name="Send")` also matched "Yes, send it" (the large-value confirm button) | exact role names; Playwright's strict mode caught it |
 | F-26 | first reading of the load report | two harness metric bugs: start-up catch-up reported as 52-block indexer lag; 503s counted as accepted transfers | warm-up excluded, created transfers counted; both runs re-rendered |
 
 No real defect in `SettlementToken` or `Escrow` was found by the fuzz, invariant or
@@ -687,3 +689,36 @@ recorded in performance-report.md.
 
 Both runs were re-summarised from their raw files with the corrected code
 (`run_load.rerender`). The published numbers come from the same data.
+
+## F-27: the double-click test couldn't see the in-flight guard (mutation check)
+
+**Found by:** mutation testing the UI suite before trusting it. Five deliberate breaks
+in `ui/app.js`, each run against the tests meant to catch it:
+
+| Mutant | Break | Result |
+|---|---|---|
+| M1 | wrong `transfer` selector (`…cbb` → `…cbc`) | killed by UI-09 |
+| M2 | `if (state.busy) return;` deleted | **survived** UI-08 (double click) |
+| M3 | amount parsed through `Number` instead of `BigInt` | killed by UI-04 and UI-10 |
+| M4 | 4001 treated as a generic wallet error | killed by UI-03 |
+| M5 | no `eth_call` simulation before signing | killed by UI-06 |
+
+M2 survived because the first click disables Send synchronously, before any `await`,
+so the second click of a double click hits a disabled button. The guard looked
+redundant. It isn't: `form.requestSubmit()` (also what Enter does) submits even with
+the button disabled.
+
+**Fix:** a new UI-08 test calls `requestSubmit()` twice in the same tick and asserts one
+transaction, one nonce and one payment. With M2 applied it fails: two transactions.
+With the guard restored it passes. All five mutants are now killed.
+
+## F-28: a role locator for "Send" also matched "Yes, send it"
+
+**Found by:** the first run of the large-value test.
+`page.get_by_role("button", name="Send")` matches by case-insensitive substring by
+default, so it resolved to both Send and the confirmation's **"Yes, send it"**.
+Playwright's strict mode refused the ambiguous locator, and the test failed loudly.
+
+Without strict mode, a test meaning to press Send could have *confirmed a large
+transfer* instead. In a payments UI, the wrong button is the expensive one. Every
+Send locator now uses `exact=True`.

@@ -691,6 +691,115 @@ drain check does catch.
 
 ---
 
+## UI-D1: The UI is one static page that talks only to an EIP-1193 wallet
+
+**Status:** Accepted (PR 10)
+
+**Decision:** `ui/index.html` + `ui/app.js`: vanilla JavaScript, no build step, no ABI
+library, no RPC URL and no keys. Every chain read and write goes through
+`window.ethereum.request`. Configuration (token address, chain id, large-value
+threshold) comes from the query string. The few selectors it needs are constants,
+and UI-09 checks them against `contracts/out/`.
+
+**Why:** the subject of this milestone is testing a dapp's front end, not building
+one. With no framework, everything a test sees is the page's own behaviour.
+Hard-coded selectors are the honest minimum, and UI-09 keeps them from drifting.
+
+---
+
+## UI-D2: Amounts are decimal strings parsed with BigInt; strict input rules
+
+**Status:** Accepted (PR 10)
+
+**Decision:**
+- An amount is digits, optionally `.` and up to `decimals` (6) more digits.
+  Surrounding spaces are trimmed.
+- Rejected, each with its own message: thousands separators, exponents, signs, zero,
+  more than 6 decimals, more than the balance.
+- Parsing and formatting use `BigInt` only. The display uses `,` thousands
+  separators and trims trailing zeros.
+
+**Why:** `Number` loses exactness above 2^53, which is 9,007,199,254.740992 tokens at 6
+decimals. That's far below a uint256, and the same class of bug as F-16 and TAPI-D3.
+Accepting `1,000` or `1e6` would make the parsed amount depend on locale and
+notation.
+
+**Tests:** UI-04 (2^53 + 1 base units end to end), UI-05 (each refused input),
+UI-10 (round trips up to 2^256 - 1 in the browser). Mutation M3 (Number arithmetic)
+is caught.
+
+---
+
+## UI-D3: Simulate before signing; never ask the wallet to sign a revert
+
+**Status:** Accepted (PR 10)
+
+**Decision:** before `eth_sendTransaction`, the page runs the exact transfer as
+`eth_call` from the user's account. A revert is decoded (allowlist, balance,
+receiver, pause) into a sentence, and the wallet is not asked to sign. If a
+transaction that simulated fine is mined with status 0, the page says "Failed on
+chain", with the reason from a replay at that block.
+
+**Why:** signing a transaction that will revert costs the user gas and teaches them
+to click through warnings. A "Confirmed" message is only ever shown for receipt
+status 1.
+
+**Tests:** UI-06 (both cases), UI-02 (the simulation precedes the send request).
+
+---
+
+## UI-D4: Large-value transfers need a second, explicit confirmation
+
+**Status:** Accepted (PR 10)
+
+**Decision:**
+- At or above `largeValue` whole tokens (default 10,000; query parameter), the page
+  stops and shows the exact amount, every digit, and the full recipient address.
+- "Yes, send it" proceeds. "Cancel" sends nothing.
+- Send stays disabled while the confirmation is open. Just below the threshold, no
+  confirmation is shown.
+
+**Why:** a mistyped amount or a pasted wrong address is the expensive UI failure in
+payments, and it can't be undone on chain. The confirmation shows the value as the
+contract will see it, not a rounded rendering.
+
+**Tests:** UI-04 (cancel, confirm, exact base units, the boundary at 9,999.999999).
+
+---
+
+## UI-D5: Wallet rejection (4001) means "nothing was sent", and the form stays
+
+**Status:** Accepted (PR 10)
+
+**Decision:** EIP-1193 error 4001 from `eth_sendTransaction` shows "You rejected the
+transaction in your wallet. Nothing was sent.". The recipient and amount stay filled
+in, and Send is enabled again. A rejected *connection* is reported the same way.
+Other wallet errors are shown with their message.
+
+**Why:** a rejection is a normal user decision, not a failure. Clearing the form would
+punish it, and a vague "error" would leave the user unsure whether money moved.
+
+**Tests:** UI-03 (no transaction, nonce and balances unchanged, values kept, the
+retry works).
+
+---
+
+## UI-D6: One submission at a time, enforced in code as well as by the button
+
+**Status:** Accepted (PR 10, from F-27)
+
+**Decision:** `submit()` returns at once while a transfer is in flight (`state.busy`),
+and the Send button is also disabled.
+
+**Why:** a disabled button stops a second click but not a second form submission
+(Enter, a script, a browser extension). Mutation testing showed the double-click test
+alone couldn't tell whether the code guard existed (F-27).
+
+**Tests:** UI-08 (a double click, and two submissions in the same tick: one
+transaction).
+
+---
+
 ## Open
 
 - None. Issue #4 is recorded above as TOK-D1.
