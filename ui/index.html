@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Settlement transfer</title>
+  <style>
+    :root { --fg:#1b1f24; --muted:#57606a; --bg:#fff; --line:#d0d7de; --ok:#1a7f37; --bad:#cf222e; --warn:#9a6700; }
+    body { font: 15px/1.5 system-ui, sans-serif; color: var(--fg); background: var(--bg); max-width: 34rem; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.3rem; }
+    label { display: block; margin-top: .8rem; font-weight: 600; }
+    input[type=text] { width: 100%; box-sizing: border-box; padding: .45rem; font: inherit; font-family: ui-monospace, monospace; border: 1px solid var(--line); border-radius: 6px; }
+    button { margin-top: 1rem; padding: .5rem 1rem; font: inherit; border-radius: 6px; border: 1px solid var(--line); cursor: pointer; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .muted { color: var(--muted); }
+    .mono { font-family: ui-monospace, monospace; word-break: break-all; }
+    [role=alert], #status { margin-top: 1rem; padding: .6rem .8rem; border-radius: 6px; border: 1px solid var(--line); }
+    [data-tone=error] { border-color: var(--bad); color: var(--bad); }
+    [data-tone=ok] { border-color: var(--ok); color: var(--ok); }
+    [data-tone=warn] { border-color: var(--warn); color: var(--warn); }
+    #confirm { margin-top: 1rem; padding: .8rem; border: 2px solid var(--warn); border-radius: 6px; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <h1>Settlement token transfer</h1>
+
+  <section id="wallet">
+    <button id="connect" type="button">Connect wallet</button>
+    <p id="account-line" hidden>Account <span id="account" class="mono"></span></p>
+    <p id="balance-line" hidden>Balance <strong id="balance" class="mono"></strong> <span class="symbol"></span></p>
+  </section>
+
+  <p id="network" role="alert" data-tone="error" hidden></p>
+
+  <form id="transfer" novalidate hidden>
+    <label for="recipient">Recipient address</label>
+    <input id="recipient" name="recipient" type="text" autocomplete="off" spellcheck="false" placeholder="0x…">
+    <label for="amount">Amount (<span class="symbol"></span>)</label>
+    <input id="amount" name="amount" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00">
+    <button id="send" type="submit">Send</button>
+  </form>
+
+  <section id="confirm" hidden aria-live="polite">
+    <p><strong>Large transfer.</strong> Check every digit before you continue.</p>
+    <p>You are sending <strong id="confirm-amount" class="mono"></strong> <span class="symbol"></span><br>
+       to <span id="confirm-recipient" class="mono"></span></p>
+    <button id="confirm-yes" type="button">Yes, send it</button>
+    <button id="confirm-no" type="button">Cancel</button>
+  </section>
+
+  <p id="error" role="alert" data-tone="error" hidden></p>
+  <p id="status" hidden></p>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
