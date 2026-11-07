@@ -37,10 +37,11 @@ tests/              Python (3.12) suites against Anvil: integration/ (PR 6), ind
                     nonces, activity, indexing, reconcile, transfers, api_server,
                     wallet (mock EIP-1193), naive_indexer and naive_transfer (DELIBERATELY BROKEN)
 requirements.txt    exact-pinned Python deps (web3 7.16.0); pytest.ini at the repo root
-docs/               plan.md, test-strategy.md, requirements.csv (catalogue) -> rtm.md / rtm.csv
+docs/               plan.md, how-to-run.md, test-strategy.md, requirements.csv (catalogue) -> rtm.md / rtm.csv
                     (generated), security-test-plan.md, uat-scripts.md, decisions.md, findings.md,
                     slither-triage.md, performance-report.md (+ performance/ evidence)
-scripts/            cloud-setup.sh, rtm.py (traceability), evidence_pack.py (release pack)
+scripts/            cloud-setup.sh, rtm.py (traceability), evidence_pack.py (release pack),
+                    check_links.py (README/docs links, run in CI)
 .github/workflows/  contracts.yml, integration.yml (+ traceability), ui.yml, nightly.yml (load,
                     03:17 UTC), release.yml (evidence pack on v* tags)
 ```
@@ -128,6 +129,9 @@ slither . --ignore-compile --config-file slither.config.json --fail-high
   (`vm.expectEmit`), and counterparties' balances.
 - Every PR description says what the tests *found* and explains one test as a
   teaching example.
+- **README numbers** (test counts, findings, coverage) are updated in the PR that changes
+  them. Every relative link in README.md, CLAUDE.md and docs/ must resolve, including
+  `tests/...py::test_name` references (`scripts/check_links.py`, in CI).
 - A behaviour choice the spec leaves open (a boundary, who may call what, what
   input is rejected) gets a test **and** an entry in `docs/decisions.md`.
 - **Fuzz:** shape inputs with `bound()`; use `vm.assume` only to exclude specific

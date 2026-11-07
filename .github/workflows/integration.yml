@@ -74,6 +74,7 @@ jobs:
 
   # Every requirement in docs/requirements.csv must be cited by a test, every cited
   # requirement must be catalogued, and docs/rtm.csv must be up to date (PR 11).
+  # Every relative link in README.md, CLAUDE.md and docs/ must resolve (PR 12).
   traceability:
     name: traceability (rtm)
     runs-on: ubuntu-latest
@@ -85,6 +86,9 @@ jobs:
           python-version: "3.12"
       - name: Requirements traceability check
         run: python scripts/rtm.py --check
+      # README and docs send reviewers to files and tests: every link must resolve (PR 12).
+      - name: Documentation link check
+        run: python scripts/check_links.py
 
   # Publishes the Allure report to GitHub Pages, on main only. Requires the repo's
   # Pages source to be set to "GitHub Actions" (Settings -> Pages).
