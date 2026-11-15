@@ -1,10 +1,10 @@
 name: nightly
 
-# Long runs that don't belong on every PR (CLAUDE.md: "long nightly runs execute in CI
-# only"). The PR-level smoke run of the same rig is in integration.yml (LOAD-01..03).
+# Long runs that don't belong on every PR (CLAUDE.md: "long load runs execute in CI only").
+# The PR-level smoke run of the same rig is in integration.yml (LOAD-01..03).
+# On demand only since v1.0.0 (LOAD-D3): Actions -> nightly -> Run workflow. The name and the
+# `nightly` load profile are kept so links, the badge and the performance evidence stay valid.
 on:
-  schedule:
-    - cron: "17 3 * * *"   # 03:17 UTC daily
   workflow_dispatch:
 
 permissions:

@@ -691,6 +691,29 @@ drain check does catch.
 
 ---
 
+
+## LOAD-D3: The nightly load run is started by hand, not on a schedule
+
+**Status:** Accepted (after v1.0.0)
+
+**Decision:** `.github/workflows/nightly.yml` keeps only `workflow_dispatch`. The daily cron
+(03:17 UTC) is removed.
+
+**Why:**
+- The project is finished (v1.0.0) and is a portfolio and learning project, not a running service.
+- The scheduled runs from Nov 8 to Nov 14 all passed (about 4.5 minutes each). Running it daily
+  re-proves the same commit and spends CI minutes without testing anything new.
+- A load run still matters when the code changes. Start it by hand then, or before showing
+  the project: Actions → nightly → Run workflow.
+
+**Kept on purpose:**
+- the workflow's name;
+- the `nightly` load profile (40 users, 3 minutes);
+- the README badge, which shows the last run.
+
+Renaming them would break links to the evidence in `docs/performance/`.
+
+**Tests:** LOAD-01..03 still run on every PR (`integration.yml`); the full profile is unchanged.
 ## UI-D1: The UI is one static page that talks only to an EIP-1193 wallet
 
 **Status:** Accepted (PR 10)

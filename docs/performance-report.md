@@ -117,5 +117,6 @@ Three things make the worker the bottleneck:
 .venv/bin/python tests/load/profile_worker.py --transfers 200
 ```
 
-The `nightly` workflow runs the first command against Postgres at 03:17 UTC, writes the
-report into the job summary and uploads `load-results/`.
+The `nightly` workflow runs the first command against Postgres when started by hand
+(Actions → nightly → Run workflow; LOAD-D3), writes the report into the job summary and
+uploads `load-results/`.
