@@ -43,7 +43,7 @@ docs/               plan.md, how-to-run.md, test-strategy.md, requirements.csv (
 scripts/            cloud-setup.sh, rtm.py (traceability), evidence_pack.py (release pack),
                     check_links.py (README/docs links, run in CI)
 .github/workflows/  contracts.yml, integration.yml (+ traceability), ui.yml, nightly.yml (load,
-                    03:17 UTC), release.yml (evidence pack on v* tags)
+                    on demand, LOAD-D3), release.yml (evidence pack on v* tags)
 ```
 
 ## Setup
@@ -98,7 +98,8 @@ slither . --ignore-compile --config-file slither.config.json --fail-high
   without a written reason in the PR.
 - **Run the full suite before pushing** (`forge test -vvv` from
   `contracts/`, plus any Python suites the PR touches). Do not push red.
-- Mainnet fork tests and long nightly runs execute in CI only. Fork tests skip
+- Mainnet fork tests and long load runs execute in CI only (the `nightly` workflow is run
+  by hand, LOAD-D3). Fork tests skip
   themselves when `MAINNET_RPC_URL` is unset; CI runs them in a separate job only
   when that secret exists.
 - After an intended gas change, regenerate with
